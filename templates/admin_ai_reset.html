@@ -3,7 +3,7 @@
     <head>
         <meta charset="utf-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
-        <title>PDF Cleanup — King Midis</title>
+        <title>Reset AI Flags — King Midis</title>
         <link rel="icon" type="image/png" href="{{ url_for('static', filename='images/logo.png') }}" />
         <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}" />
         <script>
@@ -27,7 +27,7 @@
                     </a>
                     <div>
                         <p class="eyebrow">Admin · Tool</p>
-                        <h1>Bulk PDF Cleanup</h1>
+                        <h1>Reset AI Flags</h1>
                     </div>
                 </div>
 
@@ -41,37 +41,27 @@
 
             <section class="path-card">
                 <form method="POST" class="admin-form">
-                    {% set current_stats = (folders | selectattr('name', 'equalto', selected) | list | first) %}
                     <label>
-                        Select folder
-                        <select name="folder" id="pdfFolder" required>
+                        Target folder
+                        <select name="folder" required>
+                            <option value="__all__" {% if selected == '__all__' %}selected{% endif %}>
+                                Entire library
+                            </option>
                             {% for entry in folders %}
-                            <option
-                                value="{{ entry.name }}"
-                                data-count="{{ entry.pdf_count }}"
-                                data-size="{{ entry.pdf_size_h }}"
-                                data-bytes="{{ entry.pdf_size }}"
-                                {% if entry.name == selected %}selected{% endif %}
-                            >
+                            <option value="{{ entry.name }}" {% if entry.name == selected %}selected{% endif %}>
                                 {{ entry.name }}
                             </option>
                             {% endfor %}
                         </select>
                     </label>
-                    <p id="pdfStats" class="muted">
-                        {% if current_stats %}
-                        {{ current_stats.pdf_count }} PDFs • {{ current_stats.pdf_size_h }}
-                        {% else %}
-                        No folder statistics available.
-                        {% endif %}
-                    </p>
+
                     <p class="muted">
-                        Removes PDF attachments from the folder and updates metadata attachment lists.
+                        This clears the <code>ai_scraped</code> flag so Mass AI Helper and the edit panel will rerun AI on that folder (or every folder).
                     </p>
+
                     <div class="modal-actions">
-                        <button type="submit" class="danger full-width"
-                            onclick="return confirm('Remove all PDFs in this folder?');">
-                            Delete PDFs
+                        <button type="submit" class="danger full-width" onclick="return confirm('Reset AI flags for the selected scope?');">
+                            Reset AI Flags
                         </button>
                     </div>
                 </form>
@@ -101,21 +91,6 @@
                     const active = root.getAttribute("data-theme") || "dark";
                     updateTheme(active === "dark" ? "light" : "dark");
                 });
-
-                const folderSelect = document.getElementById("pdfFolder");
-                const statsEl = document.getElementById("pdfStats");
-                const updateStats = () => {
-                    if (!folderSelect || !statsEl) return;
-                    const option = folderSelect.selectedOptions[0];
-                    if (!option) return;
-                    const count = option.dataset.count || "0";
-                    const size = option.dataset.size || "0 bytes";
-                    statsEl.textContent = `${count} PDFs • ${size}`;
-                };
-                if (folderSelect) {
-                    folderSelect.addEventListener("change", updateStats);
-                    updateStats();
-                }
 
                 if (typeof window.kmLogoSetThinking === "function") {
                     window.kmLogoSetThinking(false);

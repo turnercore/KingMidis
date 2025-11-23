@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+    <head>
+        <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <title>Composer Cleanup — King Midis</title>
+        <link rel="icon" type="image/png" href="{{ url_for('static', filename='images/logo.png') }}" />
+        <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}" />
+        <script>
+            (function () {
+                try {
+                    const stored = localStorage.getItem("km-theme");
+                    const preferred = stored || "dark";
+                    document.documentElement.setAttribute("data-theme", preferred);
+                } catch (err) {
+                    document.documentElement.setAttribute("data-theme", "dark");
+                }
+            })();
+        </script>
+    </head>
+    <body data-logo-base="work" data-admin="true">
+        <main class="container">
+            <header class="page-header">
+                <div class="header-brand">
+                    <a href="{{ url_for('browse') }}" class="brand-link" aria-label="King Midis home">
+                        <span class="brand-logo" data-logo-state="work" role="img" aria-label="King Midis logo"></span>
+                    </a>
+                    <div>
+                        <p class="eyebrow">Admin · Tool</p>
+                        <h1>Composer Cleanup</h1>
+                    </div>
+                </div>
+
+                <div class="header-actions">
+                    <a href="{{ url_for('admin_home') }}" class="admin-link">Admin Home</a>
+                    <button id="themeToggle" class="theme-toggle contrast" aria-label="Switch theme">
+                        🌙
+                    </button>
+                </div>
+            </header>
+
+            <section class="path-card">
+                <form method="GET" class="admin-form">
+                    <label>
+                        Select folder
+                        <select name="folder" onchange="this.form.submit()">
+                            {% for entry in folders %}
+                            <option value="{{ entry.name }}" {% if entry.name == selected %}selected{% endif %}>
+                                {{ entry.name }}
+                            </option>
+                            {% endfor %}
+                        </select>
+                    </label>
+                </form>
+                {% if status %}
+                <p class="admin-status">{{ status }}</p>
+                {% endif %}
+            </section>
+
+            {% if composers %}
+            <section class="list-card">
+                <header>
+                    <h2>Composers in {{ selected }}</h2>
+                    <p class="muted">Select multiple entries and combine them into one normalized composer.</p>
+                </header>
+                <form method="POST" id="composerForm" class="admin-form">
+                    <input type="hidden" name="folder" value="{{ selected }}" />
+                    <input type="hidden" name="target" id="composerTarget" />
+                    <input type="hidden" name="modalSources" id="composerSources" />
+                    <div class="composer-grid">
+                        {% for entry in composers %}
+                        <label class="checkbox-field">
+                            <input type="checkbox" name="sources" value="{{ entry.name }}" />
+                            <span>
+                                {{ entry.name }}
+                                <small>{{ entry.count }} track{% if entry.count != 1 %}s{% endif %}</small>
+                            </span>
+                        </label>
+                        {% endfor %}
+                    </div>
+                    <div class="modal-actions">
+                        <button type="button" id="combineBtn" class="contrast">Combine Selected</button>
+                    </div>
+                </form>
+            </section>
+            {% else %}
+            <section class="list-card">
+                <p class="muted">No composers found in this folder.</p>
+            </section>
+            {% endif %}
+        </main>
+
+        <script src="{{ url_for('static', filename='js/logo.js') }}"></script>
+        <script>
+            document.addEventListener("DOMContentLoaded", () => {
+                const toggle = document.getElementById("themeToggle");
+                const root = document.documentElement;
+                const STORAGE_KEY = "km-theme";
+
+                const updateTheme = (theme) => {
+                    root.setAttribute("data-theme", theme);
+                    localStorage.setItem(STORAGE_KEY, theme);
+                    toggle.textContent = theme === "dark" ? "🌙" : "☀️";
+                };
+
+                const currentTheme = root.getAttribute("data-theme") || "dark";
+                updateTheme(currentTheme);
+
+                toggle.addEventListener("click", () => {
+                    const active = root.getAttribute("data-theme") || "dark";
+                    updateTheme(active === "dark" ? "light" : "dark");
+                });
+
+                const form = document.getElementById("composerForm");
+                const combineBtn = document.getElementById("combineBtn");
+                const targetInput = document.getElementById("composerTarget");
+                const modal = document.getElementById("composerModal");
+                const modalInput = document.getElementById("composerModalInput");
+                const modalClose = document.getElementById("composerModalClose");
+                const modalCloseBtn = document.getElementById("composerModalCloseBtn");
+                const modalConfirm = document.getElementById("composerModalConfirm");
+                const modalSummary = document.getElementById("composerModalSummary");
+
+                const closeModal = () => {
+                    modal.classList.add("hidden");
+                    modalInput.value = "";
+                    modalSummary.textContent = "";
+                };
+
+                if (combineBtn && form && targetInput) {
+                    combineBtn.addEventListener("click", () => {
+                        const checked = Array.from(form.querySelectorAll('input[name="sources"]:checked'));
+                        if (!checked.length) {
+                            alert("Select at least one composer to merge.");
+                            return;
+                        }
+                        modalSummary.textContent = checked.map((c) => c.value).join(", ");
+                        modal.classList.remove("hidden");
+                        modalInput.focus();
+                    });
+                }
+
+                modalConfirm?.addEventListener("click", () => {
+                    const target = modalInput.value.trim();
+                    if (!target) {
+                        alert("Enter a composer name.");
+                        return;
+                    }
+                    targetInput.value = target;
+                    if (typeof window.kmLogoSetThinking === "function") {
+                        window.kmLogoSetThinking(true);
+                    }
+                    form.submit();
+                });
+
+                modalClose?.addEventListener("click", closeModal);
+                modalCloseBtn?.addEventListener("click", closeModal);
+                modal?.addEventListener("click", (event) => {
+                    if (event.target === modal) {
+                        closeModal();
+                    }
+                });
+            });
+        </script>
+
+        <div id="composerModal" class="admin-modal hidden">
+            <div class="admin-modal__dialog">
+                <div class="admin-modal__header">
+                    <h3>Combine composers</h3>
+                    <button type="button" id="composerModalClose" class="admin-close icon-btn">✕</button>
+                </div>
+                <div class="admin-form">
+                    <p class="muted">Merging: <span id="composerModalSummary"></span></p>
+                    <label>
+                        New composer name
+                        <input type="text" id="composerModalInput" placeholder="e.g., J. S. Bach" />
+                    </label>
+                    <div class="modal-actions">
+                        <button type="button" class="secondary" id="composerModalCloseBtn">Cancel</button>
+                        <button type="button" class="contrast" id="composerModalConfirm">Combine</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </body>
+</html>

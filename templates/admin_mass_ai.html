@@ -44,30 +44,31 @@
                     <h2>Folders</h2>
                     <p class="muted">Click the brain to run AI on all MIDI files in that folder.</p>
                 </header>
-                <ul class="file-list">
+                <ul class="file-list" id="massAiList">
                     {% for entry in folders %}
                     <li class="dir">
                         <span class="file-label">{{ entry.name }}</span>
-                        <form method="POST" class="inline-form">
-                            <input type="hidden" name="folder" value="{{ entry.name }}" />
-                            <button class="icon-btn ai-run-btn" type="submit" title="Run AI">
-                                🧠
-                            </button>
-                        </form>
+                        <button class="icon-btn ai-run-btn" type="button" data-folder="{{ entry.name }}" title="Toggle AI run">
+                            🧠
+                        </button>
                     </li>
                     {% endfor %}
                 </ul>
-                {% if status %}
-                <p class="admin-status">{{ status }}</p>
-                {% endif %}
+                <p class="admin-status" id="massAiStatus">
+                    {% if status.running %}
+                    Running AI for {{ status.folder }}…
+                    {% else %}
+                    Select a folder to begin.
+                    {% endif %}
+                </p>
             </section>
 
-            {% if logs %}
             <section class="path-card">
                 <header><strong>Log</strong></header>
-                <pre class="log-output">{{ logs|join('\n') }}</pre>
+                <pre class="log-output" id="massAiLog">
+{% if status.log %}{{ status.log|join('\n') }}{% else %}No activity yet.{% endif %}
+                </pre>
             </section>
-            {% endif %}
         </main>
 
         <script src="{{ url_for('static', filename='js/logo.js') }}"></script>
@@ -76,7 +77,10 @@
                 const toggle = document.getElementById("themeToggle");
                 const root = document.documentElement;
                 const STORAGE_KEY = "km-theme";
-                const forms = document.querySelectorAll(".inline-form");
+                const brainButtons = document.querySelectorAll(".ai-run-btn");
+                const statusEl = document.getElementById("massAiStatus");
+                const logOutput = document.getElementById("massAiLog");
+                const initialStatus = {{ status|tojson }};
 
                 const updateTheme = (theme) => {
                     root.setAttribute("data-theme", theme);
@@ -92,17 +96,98 @@
                     updateTheme(active === "dark" ? "light" : "dark");
                 });
 
-                forms.forEach((form) => {
-                    form.addEventListener("submit", () => {
+                const setRunningState = (activeLi) => {
+                    brainButtons.forEach((btn) => {
+                        if (activeLi && btn.closest("li") === activeLi) {
+                            btn.classList.add("running");
+                            btn.classList.remove("disabled");
+                        } else if (activeLi) {
+                            btn.classList.add("disabled");
+                            btn.classList.remove("running");
+                        } else {
+                            btn.classList.remove("running", "disabled");
+                        }
+                    });
+                };
+
+                const liForFolder = (folder) => {
+                    return (
+                        Array.from(brainButtons)
+                            .map((btn) => btn.closest("li"))
+                            .find((li) => {
+                                const btn = li.querySelector(".ai-run-btn");
+                                return btn && btn.dataset.folder === folder;
+                            }) || null
+                    );
+                };
+
+                brainButtons.forEach((btn) => {
+                    btn.addEventListener("click", async () => {
+                        const folder = btn.dataset.folder;
+                        if (btn.classList.contains("running")) {
+                            await fetch("/admin/mass-ai/cancel", { method: "POST" });
+                            if (statusEl) statusEl.textContent = "Cancelling…";
+                            return;
+                        }
+                        if (btn.classList.contains("disabled")) {
+                            return;
+                        }
+                        const response = await fetch("/admin/mass-ai/start", {
+                            method: "POST",
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify({ folder }),
+                        });
+                        if (!response.ok) {
+                            const body = await response.json().catch(() => ({}));
+                            alert(body.error || "Unable to start Mass AI.");
+                            return;
+                        }
+                        setRunningState(btn.closest("li"));
+                        if (statusEl) statusEl.textContent = `Running AI for ${folder}…`;
+                        if (logOutput) {
+                            logOutput.textContent = `Running AI for ${folder}…\n` + (logOutput.textContent || "");
+                        }
                         if (typeof window.kmLogoSetThinking === "function") {
                             window.kmLogoSetThinking(true);
                         }
                     });
                 });
 
-                if (typeof window.kmLogoSetThinking === "function") {
-                    window.kmLogoSetThinking(false);
+                if (initialStatus.running) {
+                    if (statusEl) statusEl.textContent = `Running AI for ${initialStatus.folder}…`;
+                    setRunningState(liForFolder(initialStatus.folder));
+                } else {
+                    setRunningState(null);
+                    if (statusEl) statusEl.textContent = "Idle.";
                 }
+                if (logOutput && initialStatus.log) {
+                    logOutput.textContent = initialStatus.log.join("\n") || "No activity yet.";
+                }
+                const pollStatus = async () => {
+                    try {
+                        const res = await fetch("/admin/mass-ai/status");
+                        const payload = await res.json();
+                        if (payload.running) {
+                            if (statusEl) statusEl.textContent = `Running AI for ${payload.folder}…`;
+                            setRunningState(liForFolder(payload.folder));
+                        } else {
+                            setRunningState(null);
+                            if (statusEl) statusEl.textContent = "Idle.";
+                            if (typeof window.kmLogoSetThinking === "function") {
+                                window.kmLogoSetThinking(false);
+                            }
+                        }
+                        if (logOutput && payload.log) {
+                            logOutput.textContent = payload.log.join("\n") || "No activity yet.";
+                            logOutput.scrollTop = logOutput.scrollHeight;
+                        }
+                    } catch (err) {
+                        console.error(err);
+                    } finally {
+                        setTimeout(pollStatus, 3000);
+                    }
+                };
+                pollStatus();
             });
         </script>
     </body>

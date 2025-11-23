@@ -2,6 +2,7 @@ from flask import Flask, render_template, send_from_directory, abort, request, j
 from pathlib import Path
 from collections.abc import Callable
 from openai import OpenAI
+import threading
 import os
 import io
 import zipfile
@@ -32,6 +33,34 @@ OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
 OPENAI_MODEL = os.environ.get("OPENAI_MODEL", "gpt-5-nano")
 openai_client = OpenAI(api_key=OPENAI_API_KEY) if OPENAI_API_KEY else None
 AI_ENABLED = openai_client is not None
+mass_ai_state = {
+    "lock": threading.Lock(),
+    "running": False,
+    "folder": None,
+    "log": [],
+    "cancel": None,
+    "thread": None,
+}
+scrub_state = {
+    "lock": threading.Lock(),
+    "running": False,
+    "log": [],
+    "summary": [],
+    "error": None,
+    "cancel": None,
+}
+
+
+def human_readable_bytes(num: int) -> str:
+    step = 1024.0
+    for unit in ["bytes", "KB", "MB", "GB", "TB"]:
+        if num < step:
+            if unit == "bytes":
+                return f"{num} bytes"
+            return f"{num:.1f} {unit}"
+        num /= step
+    return f"{num:.1f} PB"
+
 
 INSTRUMENT_PRESETS = [
     {"id": "piano", "label": "Grand Piano", "emoji": "🎹"},
@@ -62,6 +91,132 @@ INSTRUMENT_KEYWORDS = [
 ]
 
 MIDI_EXTENSIONS = [".mid", ".midi"]
+WORK_ID_FIELD = "work_id"
+PART_LABEL_FIELD = "part_label"
+DEFAULT_PART_LABEL = "main"
+MAX_PART_SUFFIX_TOKENS = 5
+PART_PREFIXES = {
+    "score",
+    "solo",
+    "string",
+    "strings",
+    "violin",
+    "violin1",
+    "violin2",
+    "violino",
+    "violone",
+    "viola",
+    "cello",
+    "cellos",
+    "violoncello",
+    "continuo",
+    "basso",
+    "bass",
+    "contrabass",
+    "doublebass",
+    "harpsichord",
+    "clavier",
+    "clavichord",
+    "keyboard",
+    "organ",
+    "piano",
+    "guitar",
+    "harp",
+    "lute",
+    "flute",
+    "oboe",
+    "clarinet",
+    "trumpet",
+    "trombone",
+    "horn",
+    "sax",
+    "saxophone",
+    "piccolo",
+    "bassoon",
+    "fagotto",
+    "choir",
+    "chorus",
+    "chorale",
+    "voice",
+    "soprano",
+    "alto",
+    "tenor",
+    "baritone",
+    "percussion",
+    "drum",
+    "drums",
+    "part",
+    "parts",
+}
+SHARED_WORK_FIELDS = {
+    "name",
+    "composer",
+    "license",
+    "source",
+    "contributor",
+    "modified_by",
+    "bpm",
+    "genre",
+    "tags",
+    "attachments",
+    AI_FLAG_FIELD,
+}
+
+
+def token_is_part_indicator(token: str) -> bool:
+    clean = (token or "").strip().lower()
+    if not clean:
+        return False
+    if clean in PART_PREFIXES:
+        return True
+    for prefix in PART_PREFIXES:
+        if prefix in {"part", "parts"}:
+            continue
+        if clean.startswith(prefix):
+            return True
+    if clean.startswith("part") and any(ch.isdigit() for ch in clean):
+        return True
+    return False
+
+
+def gather_sibling_stems(midi_path: Path) -> list[str]:
+    folder = midi_path.parent
+    stems: set[str] = set()
+    for suffix in MIDI_EXTENSIONS:
+        pattern = f"*{suffix}"
+        for candidate in folder.glob(pattern):
+            if candidate.is_file():
+                stems.add(candidate.stem)
+    return sorted(stems)
+
+
+def guess_work_identity(midi_path: Path, sibling_stems: list[str] | None = None) -> tuple[str, str | None]:
+    stem = midi_path.stem
+    tokens = [token for token in stem.split("-") if token]
+    if len(tokens) <= 1:
+        return stem, None
+
+    siblings = sibling_stems if sibling_stems is not None else gather_sibling_stems(midi_path)
+    max_suffix = min(MAX_PART_SUFFIX_TOKENS, len(tokens) - 1)
+
+    for suffix_len in range(max_suffix, 0, -1):
+        prefix_tokens = tokens[:-suffix_len]
+        suffix_tokens = tokens[-suffix_len:]
+        if not prefix_tokens or not suffix_tokens:
+            continue
+        first_token = suffix_tokens[0]
+        if not token_is_part_indicator(first_token):
+            continue
+        prefix = "-".join(prefix_tokens)
+        has_partner = any(
+            other != stem and (other == prefix or other.startswith(prefix + "-"))
+            for other in siblings
+        )
+        if not has_partner:
+            continue
+        return prefix, "-".join(suffix_tokens)
+
+    return stem, None
 
 
 def get_safe_path(subpath: str) -> Path:
@@ -106,9 +261,38 @@ def load_meta(midi_path: Path) -> dict | None:
     return None
 
 
+def ensure_work_identity_fields(midi_path: Path, meta: dict | None) -> tuple[dict, bool]:
+    meta = dict(meta or {})
+    siblings = gather_sibling_stems(midi_path)
+    guessed_work, guessed_part = guess_work_identity(midi_path, siblings)
+
+    work_value = slugify(meta.get(WORK_ID_FIELD) or guessed_work or midi_path.stem)
+    if not work_value:
+        work_value = slugify(midi_path.stem)
+
+    part_value = slugify(meta.get(PART_LABEL_FIELD) or guessed_part or DEFAULT_PART_LABEL)
+    if not part_value:
+        part_value = DEFAULT_PART_LABEL
+
+    changed = False
+    if meta.get(WORK_ID_FIELD) != work_value:
+        meta[WORK_ID_FIELD] = work_value
+        changed = True
+    if meta.get(PART_LABEL_FIELD) != part_value:
+        meta[PART_LABEL_FIELD] = part_value
+        changed = True
+
+    return meta, changed
+
+
 def ensure_meta(midi_path: Path) -> dict:
     meta = load_meta(midi_path)
     if meta is not None:
+        meta, changed = ensure_work_identity_fields(midi_path, meta)
+        if changed:
+            meta_path = meta_path_for_write(midi_path)
+            meta_path.write_text(yaml.safe_dump(
+                meta, allow_unicode=True, sort_keys=False))
         return meta
 
     default_meta = {
@@ -117,6 +301,7 @@ def ensure_meta(midi_path: Path) -> dict:
         "license": "Public Domain",
         "instrument": DEFAULT_INSTRUMENT_ID,
     }
+    default_meta, _ = ensure_work_identity_fields(midi_path, default_meta)
     meta_path = meta_path_for_write(midi_path)
     meta_path.write_text(yaml.safe_dump(
         default_meta, allow_unicode=True, sort_keys=False))
@@ -216,7 +401,12 @@ def derive_collection_title(subpath: str) -> str:
     return "King Midis"
 
 
-def build_meta_context(midi_path: Path, meta_data: dict | None, rel_path: str) -> dict:
+def build_meta_context(
+    midi_path: Path,
+    meta_data: dict | None,
+    rel_path: str,
+    work_groups: dict[str, list[Path]] | None = None,
+) -> dict:
     meta_data = meta_data or {}
     parent_name = midi_path.parent.name if midi_path.parent != midi_path else ""
     display_name = meta_data.get("name") or midi_path.stem
@@ -249,6 +439,11 @@ def build_meta_context(midi_path: Path, meta_data: dict | None, rel_path: str) -
         tags_list = []
 
     attachments = collect_attachment_candidates(midi_path, meta_data)
+    work_id_value = meta_data.get(WORK_ID_FIELD) or midi_path.stem
+    part_label_value = meta_data.get(PART_LABEL_FIELD) or DEFAULT_PART_LABEL
+    linked_midis = list_linked_midis(midi_path, work_id_value, work_groups)
+    linked_count = len(linked_midis)
+    part_display = format_part_label(part_label_value)
 
     lines = [f"{display_name} by {composer}"]
     if contributor:
@@ -260,8 +455,8 @@ def build_meta_context(midi_path: Path, meta_data: dict | None, rel_path: str) -
     lines.append(f"Licensed under {license_value}")
 
     form_defaults = {
-        "name": meta_data.get("name", ""),
-        "composer": meta_data.get("composer", ""),
+        "name": meta_data.get("name", "") or display_name,
+        "composer": meta_data.get("composer", "") or composer,
         "contributor": contributor or "",
         "modified_by": meta_data.get("modified_by", ""),
         "source": meta_data.get("source", ""),
@@ -272,6 +467,10 @@ def build_meta_context(midi_path: Path, meta_data: dict | None, rel_path: str) -
         "genre": genre_value,
         "tags": ", ".join(tags_list),
         "ai_scraped": "1" if ai_flag_value(meta_data) else "",
+        "work_id": work_id_value,
+        "part_label": part_label_value,
+        "part_display": part_display,
+        "linked_part_count": linked_count,
     }
 
     preset = INSTRUMENT_LOOKUP.get(
@@ -294,6 +493,10 @@ def build_meta_context(midi_path: Path, meta_data: dict | None, rel_path: str) -
         "genre": genre_value,
         "tags": tags_list,
         "attachments": attachments,
+        "work_id": work_id_value,
+        "part_label": part_label_value,
+        "part_display": part_display,
+        "linked_part_count": linked_count,
     }
 
 
@@ -321,6 +524,64 @@ def meta_path_for_write(midi_path: Path) -> Path:
 
 def is_midi_file(path: Path) -> bool:
     return path.is_file() and path.suffix.lower() in MIDI_EXTENSIONS
+
+
+def list_linked_midis(
+    midi_path: Path,
+    work_id: str,
+    work_groups: dict[str, list[Path]] | None = None,
+) -> list[Path]:
+    normalized = slugify(work_id or "")
+    if not normalized:
+        return []
+    if work_groups is not None:
+        return list(work_groups.get(normalized, []))
+    folder = midi_path.parent
+    linked: list[Path] = []
+    for suffix in MIDI_EXTENSIONS:
+        for candidate in folder.glob(f"*{suffix}"):
+            if not candidate.is_file():
+                continue
+            meta = ensure_meta(candidate)
+            candidate_work = slugify(meta.get(WORK_ID_FIELD) or "")
+            if candidate_work == normalized:
+                linked.append(candidate)
+    return linked
+
+
+def propagate_work_metadata(origin_path: Path, base_meta: dict) -> None:
+    work_id = slugify(base_meta.get(WORK_ID_FIELD) or "")
+    if not work_id:
+        return
+    shared_payload = {
+        key: base_meta.get(key)
+        for key in SHARED_WORK_FIELDS
+        if key in base_meta
+    }
+    for sibling in list_linked_midis(origin_path, work_id):
+        if sibling == origin_path:
+            continue
+        meta = ensure_meta(sibling)
+        changed = False
+        for key, value in shared_payload.items():
+            if value in (None, "", [], {}):
+                if key in meta:
+                    meta.pop(key, None)
+                    changed = True
+                continue
+            if meta.get(key) != value:
+                meta[key] = value
+                changed = True
+        if changed:
+            meta_path = meta_path_for_write(sibling)
+            meta_path.write_text(yaml.safe_dump(meta, allow_unicode=True, sort_keys=False))
+
+
+def format_part_label(part_label: str | None) -> str:
+    label = (part_label or DEFAULT_PART_LABEL).replace("-", " ").strip()
+    if not label:
+        return "Full score"
+    return label.title()
 
 
 def rename_sidecars(original_path: Path, new_stem: str, attachments: list[str] | None = None) -> list[str]:
@@ -380,6 +641,15 @@ def update_metadata_for_path(midi_path: Path, listing: dict, part_label: str | N
     existing = load_meta(midi_path)
     merged = dict(existing) if existing else {}
 
+    work_slug = slugify(listing.get("title") or midi_path.stem)
+    if not work_slug:
+        work_slug = midi_path.stem
+    merged[WORK_ID_FIELD] = work_slug
+    inferred_part = slugify(part_label) if part_label else DEFAULT_PART_LABEL
+    if not inferred_part:
+        inferred_part = DEFAULT_PART_LABEL
+    merged[PART_LABEL_FIELD] = inferred_part
+
     updates = {
         "name": f"{listing['title']} - {part_label}" if part_label else listing["title"],
         "composer": listing.get("composer"),
@@ -396,6 +666,11 @@ def update_metadata_for_path(midi_path: Path, listing: dict, part_label: str | N
 
     changed = False
     for key, value in updates.items():
+        if key in ("license", "contributor"):
+            if value and merged.get(key) != value:
+                merged[key] = value
+                changed = True
+            continue
         if value and not merged.get(key):
             merged[key] = value
             changed = True
@@ -517,6 +792,7 @@ def scrobble_mutopia(
     *,
     log: Callable[[str], None] | None = None,
     source: str = "mutopia",
+    cancel_event: threading.Event | None = None,
 ) -> list[dict]:
     if source != "mutopia":
         raise ValueError("Unsupported source")
@@ -533,6 +809,10 @@ def scrobble_mutopia(
     test_state = {"first": False, "second": False, "zip": False}
 
     while True:
+        if cancel_event and cancel_event.is_set():
+            log_fn("Cancelled.")
+            break
+
         params = {
             "searchingfor": search_term,
             "Composer": "",
@@ -567,6 +847,10 @@ def scrobble_mutopia(
             break
 
         for table in tables:
+            if cancel_event and cancel_event.is_set():
+                log_fn("Cancelled.")
+                break
+
             listing = parse_mutopia_table(table)
             if not listing:
                 continue
@@ -608,7 +892,8 @@ def scrobble_mutopia(
                         log_fn("Test run complete.")
                         return results
                 else:
-                    log_fn("Entry unchanged during test run; searching for another example.")
+                    log_fn(
+                        "Entry unchanged during test run; searching for another example.")
                     continue
 
         next_link = soup.find(
@@ -799,7 +1084,20 @@ def browse(subpath: str):
         abort(404)
 
     entries = []
-    for child in sorted(full_path.iterdir(), key=lambda p: (not p.is_dir(), p.name.lower())):
+    children = sorted(full_path.iterdir(), key=lambda p: (not p.is_dir(), p.name.lower()))
+    work_groups: dict[str, list[Path]] = {}
+    meta_cache: dict[Path, dict] = {}
+
+    for child in children:
+        if not is_midi_file(child):
+            continue
+        meta_data = ensure_meta(child)
+        meta_cache[child] = meta_data
+        work_key = slugify(meta_data.get(WORK_ID_FIELD) or child.stem)
+        if work_key:
+            work_groups.setdefault(work_key, []).append(child)
+
+    for child in children:
         rel = child.relative_to(BASE_DIR)
         is_midi = is_midi_file(child)
         entry = {
@@ -812,8 +1110,8 @@ def browse(subpath: str):
         }
 
         if is_midi:
-            meta_data = ensure_meta(child)
-            meta_context = build_meta_context(child, meta_data, str(rel))
+            meta_data = meta_cache.get(child) or ensure_meta(child)
+            meta_context = build_meta_context(child, meta_data, str(rel), work_groups)
             entry["meta"] = meta_context
             entry["display_name"] = meta_context["display_name"]
             entry["instrument_icon"] = meta_context["instrument_icon"]
@@ -921,6 +1219,14 @@ def update_entry():
         except ValueError:
             bpm_value = None
 
+    guessed_work, guessed_part = guess_work_identity(updated_path)
+    work_id_value = slugify(metadata.get(WORK_ID_FIELD) or guessed_work or sanitized_slug)
+    if not work_id_value:
+        work_id_value = sanitized_slug
+    part_label_value = slugify(metadata.get(PART_LABEL_FIELD) or guessed_part or DEFAULT_PART_LABEL)
+    if not part_label_value:
+        part_label_value = DEFAULT_PART_LABEL
+
     meta_payload = {
         "name": metadata.get("name", ""),
         "composer": metadata.get("composer", ""),
@@ -929,6 +1235,8 @@ def update_entry():
         "source": metadata.get("source", ""),
         "license": metadata.get("license") or "Public Domain",
         "instrument": instrument_choice,
+        WORK_ID_FIELD: work_id_value,
+        PART_LABEL_FIELD: part_label_value,
     }
     if bpm_value:
         meta_payload["bpm"] = bpm_value
@@ -957,6 +1265,7 @@ def update_entry():
     meta_path.write_text(
         yaml.safe_dump(meta_payload, allow_unicode=True, sort_keys=False)
     )
+    propagate_work_metadata(updated_path, meta_payload)
 
     return jsonify(
         {
@@ -1071,7 +1380,8 @@ def admin_home():
     if not ADMIN_MODE:
         return redirect(url_for("browse"))
 
-    return render_template("admin_index.html", admin_mode=ADMIN_MODE)
+    stats = compute_library_stats()
+    return render_template("admin_index.html", admin_mode=ADMIN_MODE, stats=stats)
 
 
 def list_top_level_folders():
@@ -1091,9 +1401,13 @@ def iter_midi_files(folder: Path):
             yield path
 
 
-def mass_ai_process_folder(folder: Path, log_lines: list[str]) -> int:
+def mass_ai_process_folder(folder: Path, log_lines: list[str], cancel_event=None) -> int:
     processed = 0
     for midi in iter_midi_files(folder):
+        if cancel_event and cancel_event.is_set():
+            log_lines.append("Mass AI cancelled.")
+            print("[MassAI] Cancelled run.")
+            break
         meta = ensure_meta(midi)
         if ai_flag_value(meta):
             log_lines.append(f"Skipping {midi.name}: already AI processed.")
@@ -1102,57 +1416,360 @@ def mass_ai_process_folder(folder: Path, log_lines: list[str]) -> int:
             rel_path = str(midi.relative_to(BASE_DIR))
         except ValueError:
             rel_path = midi.name
-        payload = {
-            "rel_path": rel_path,
-            "metadata": {
-                "name": meta.get("name", ""),
-                "composer": meta.get("composer", ""),
-                "contributor": meta.get("contributor", ""),
-                "modified_by": meta.get("modified_by", ""),
-                "source": meta.get("source", ""),
-                "license": meta.get("license", ""),
-                "instrument": meta.get("instrument", ""),
-                "attachments": ", ".join(normalize_attachment_list(meta.get("attachments"))),
-                "bpm": meta.get("bpm", ""),
-                "genre": meta.get("genre", ""),
-                "tags": ", ".join(normalize_attachment_list(meta.get("tags"))),
-            },
-        }
-        log_lines.append(f"Running AI for {midi.name}")
-        suggestion = request_ai_suggestion(payload)
-        if suggestion:
-            updated = dict(meta)
-            updated["name"] = suggestion["name"] or updated.get("name", "")
-            updated["composer"] = suggestion["composer"] or updated.get("composer", "")
-            if suggestion["bpm"]:
-                updated["bpm"] = suggestion["bpm"]
-            if suggestion["genre"]:
-                updated["genre"] = suggestion["genre"]
-            if suggestion["tags"]:
-                updated["tags"] = suggestion["tags"]
-            updated[AI_FLAG_FIELD] = True
-            meta_path = meta_path_for_write(midi)
-            meta_path.write_text(yaml.safe_dump(updated, allow_unicode=True, sort_keys=False))
-            processed += 1
-            log_lines.append(f"Updated {midi.name}")
+            context_blob = {
+                "file_name": midi.name,
+                "folder": midi.parent.name,
+                "metadata": {
+                    "name": meta.get("name", ""),
+                    "composer": meta.get("composer", ""),
+                    "bpm": meta.get("bpm", ""),
+                    "genre": meta.get("genre", ""),
+                    "tags": meta.get("tags", []),
+                },
+            }
+        message = f"Running AI for {midi.name}"
+        print(f"[MassAI] {message}")
+        log_lines.append(message)
+        suggestion, error = request_ai_suggestion(context_blob)
+        if error or not suggestion:
+            log_lines.append(f"AI failed for {midi.name}: {error}")
+            print(f"[MassAI] AI failed for {midi.name}: {error}")
+            continue
+        updated = dict(meta)
+        if suggestion.get("name"):
+            updated["name"] = suggestion["name"]
+        if suggestion.get("composer"):
+            updated["composer"] = suggestion["composer"]
+        if suggestion.get("bpm"):
+            updated["bpm"] = suggestion["bpm"]
+        if suggestion.get("genre"):
+            updated["genre"] = suggestion["genre"]
+        if suggestion.get("tags"):
+            updated["tags"] = suggestion["tags"]
+        updated[AI_FLAG_FIELD] = True
+        meta_path = meta_path_for_write(midi)
+        meta_path.write_text(yaml.safe_dump(
+            updated, allow_unicode=True, sort_keys=False))
+        propagate_work_metadata(midi, updated)
+        processed += 1
+        log_lines.append(f"Updated {midi.name}")
+        print(f"[MassAI] Updated {midi.name}")
+    if cancel_event and cancel_event.is_set():
+        log_lines.append(f"Stopped after updating {processed} files.")
+    else:
+        log_lines.append(
+            f"Completed {folder.name}: {processed} files updated.")
     return processed
 
 
 def cleanup_pdfs_in_folder(folder: Path) -> int:
     removed = 0
+    bytes_saved = 0
     for pdf in folder.glob("*.pdf"):
         if not pdf.is_file():
             continue
+        try:
+            bytes_saved += pdf.stat().st_size
+        except OSError:
+            pass
         pdf.unlink(missing_ok=True)
         removed += 1
     for midi in iter_midi_files(folder):
         meta = load_meta(midi)
         if not meta:
             continue
-        meta["attachments"] = []
+        attachments = [
+            item for item in normalize_attachment_list(meta.get("attachments"))
+            if not item.lower().endswith(".pdf")
+        ]
+        meta["attachments"] = attachments
         meta_path = meta_path_for_write(midi)
-        meta_path.write_text(yaml.safe_dump(meta, allow_unicode=True, sort_keys=False))
-    return removed
+        meta_path.write_text(yaml.safe_dump(
+            meta, allow_unicode=True, sort_keys=False))
+    return removed, bytes_saved
+
+
+def collect_link_candidates(folder: Path) -> list[dict]:
+    midi_files = list(iter_midi_files(folder))
+    sibling_stems = [path.stem for path in midi_files]
+    candidates: list[dict] = []
+
+    for midi in midi_files:
+        meta = ensure_meta(midi)
+        current_work = slugify(meta.get(WORK_ID_FIELD) or midi.stem) or midi.stem
+        current_part = slugify(meta.get(PART_LABEL_FIELD) or DEFAULT_PART_LABEL) or DEFAULT_PART_LABEL
+        guess_work, guess_part = guess_work_identity(midi, sibling_stems)
+        suggested_work = slugify(guess_work or current_work) or current_work
+        suggested_part = slugify(guess_part or current_part) or current_part
+        needs_review = (current_work != suggested_work) or (current_part != suggested_part)
+        candidates.append(
+            {
+                "name": midi.name,
+                "rel_path": str(midi.relative_to(BASE_DIR)),
+                "work_id": current_work,
+                "part_label": current_part,
+                "suggested_work_id": suggested_work,
+                "suggested_part_label": suggested_part,
+                "initial_work_id": current_work or suggested_work,
+                "initial_part_label": current_part or suggested_part,
+                "needs_review": needs_review,
+                "part_display": format_part_label(current_part or suggested_part),
+            }
+        )
+
+    return candidates
+
+
+def collect_composer_counts(folder: Path) -> list[dict]:
+    counts: dict[str, int] = {}
+    for midi in iter_midi_files(folder):
+        meta = ensure_meta(midi)
+        composer = meta.get("composer") or midi.parent.name
+        counts[composer] = counts.get(composer, 0) + 1
+    return [
+        {"name": name, "count": count}
+        for name, count in sorted(counts.items(), key=lambda item: item[0].lower())
+    ]
+
+
+def merge_composers_in_folder(folder: Path, sources: list[str], target: str) -> int:
+    sources_set = {s for s in sources if s}
+    if not sources_set:
+        return 0
+    updated_files = 0
+    for midi in iter_midi_files(folder):
+        meta = ensure_meta(midi)
+        composer = meta.get("composer") or midi.parent.name
+        if composer not in sources_set:
+            continue
+        meta["composer"] = target
+        meta_path = meta_path_for_write(midi)
+        meta_path.write_text(yaml.safe_dump(
+            meta, allow_unicode=True, sort_keys=False))
+        updated_files += 1
+    return updated_files
+
+
+def reset_ai_flags(folder: Path | None) -> int:
+    count = 0
+    targets = []
+    if folder:
+        targets.append(folder)
+    else:
+        targets = [child for child in BASE_DIR.iterdir() if child.is_dir()]
+
+    for target in targets:
+        for midi in iter_midi_files(target):
+            meta = ensure_meta(midi)
+            if AI_FLAG_FIELD in meta:
+                meta.pop(AI_FLAG_FIELD, None)
+                meta_path = meta_path_for_write(midi)
+                meta_path.write_text(yaml.safe_dump(meta, allow_unicode=True, sort_keys=False))
+                count += 1
+    return count
+
+
+def folder_pdf_stats(folder: Path) -> dict:
+    count = 0
+    total = 0
+    for pdf in folder.glob("*.pdf"):
+        if not pdf.is_file():
+            continue
+        count += 1
+        try:
+            total += pdf.stat().st_size
+        except OSError:
+            continue
+    return {"pdf_count": count, "pdf_size": total, "pdf_size_h": human_readable_bytes(total)}
+
+
+def compute_library_stats() -> dict:
+    composers = set()
+    midi_count = 0
+    sheet_count = 0
+    total_size = 0
+    for path in BASE_DIR.rglob("*"):
+        if not path.is_file():
+            continue
+        try:
+            total_size += path.stat().st_size
+        except OSError:
+            pass
+        suffix = path.suffix.lower()
+        if suffix == ".pdf":
+            sheet_count += 1
+        elif suffix in (".mid", ".midi"):
+            midi_count += 1
+            meta = load_meta(path) or {}
+            composer = meta.get("composer") or path.parent.name
+            composers.add(composer)
+    return {
+        "composers": len(composers),
+        "midis": midi_count,
+        "sheets": sheet_count,
+        "size": human_readable_bytes(total_size),
+    }
+
+
+def request_ai_suggestion(context_blob: dict):
+    if not AI_ENABLED or not openai_client:
+        return None, "AI assistance is not configured."
+
+    # Compact JSON to reduce tokens
+    input_json = json.dumps(
+        context_blob,
+        ensure_ascii=False,
+        separators=(",", ":"),
+    )
+
+    try:
+        completion = openai_client.chat.completions.create(
+            model=OPENAI_MODEL,  # e.g. "gpt-5-nano"
+            response_format={"type": "json_object"},
+            messages=[
+                {
+                    "role": "system",
+                    "content": (
+                        "You clean up classical music metadata for a MIDI library. "
+                        "Given some input metadata as JSON, respond ONLY with JSON having:\n"
+                        " - name: title string\n"
+                        " - composer: string\n"
+                        " - bpm: number (or null if unknown)\n"
+                        " - genre: short string\n"
+                        " - tags: array of 3–6 short descriptive strings\n"
+                        "Keep the existing composer unless you are certain it should change."
+                    ),
+                },
+                {
+                    "role": "user",
+                    "content": input_json,
+                },
+            ],
+        )
+
+        ai_text = completion.choices[0].message.content.strip()
+        suggestion = json.loads(ai_text)
+        return suggestion, None
+
+    except Exception as exc:
+        app.logger.exception("AI suggestion failed")
+        return None, str(exc)
+
+
+def start_mass_ai_thread(folder: Path):
+    with mass_ai_state["lock"]:
+        if mass_ai_state["running"]:
+            return False, "Mass AI already running."
+        log = [f"Starting AI for {folder.name}"]
+        cancel_event = threading.Event()
+
+        def worker():
+            try:
+                mass_ai_process_folder(folder, log, cancel_event)
+            except Exception as exc:
+                log.append(f"Error: {exc}")
+            finally:
+                cancel_event.set()
+                with mass_ai_state["lock"]:
+                    mass_ai_state.update(
+                        {"running": False, "folder": None,
+                            "cancel": None, "thread": None}
+                    )
+
+        thread = threading.Thread(target=worker, daemon=True)
+        mass_ai_state.update(
+            {
+                "running": True,
+                "folder": folder.name,
+                "log": log,
+                "cancel": cancel_event,
+                "thread": thread,
+            }
+        )
+        thread.start()
+        return True, None
+
+
+def scrub_log_append(message: str):
+    print(f"[Magic Midi Finder] {message}")
+    with scrub_state["lock"]:
+        scrub_state["log"].append(message)
+        # keep memory bounded
+        if len(scrub_state["log"]) > 500:
+            scrub_state["log"] = scrub_state["log"][-500:]
+
+
+def start_scrub_thread(term: str, download_pdf: bool, test_mode: bool, source: str):
+    with scrub_state["lock"]:
+        if scrub_state["running"]:
+            return False, "Scrub already running."
+        cancel_event = threading.Event()
+        scrub_state.update(
+            {
+                "running": True,
+                "log": [f"Starting search for '{term}'"],
+                "summary": [],
+                "error": None,
+                "cancel": cancel_event,
+            }
+        )
+
+    def log_fn(message: str):
+        scrub_log_append(message)
+
+    def worker():
+        try:
+            summary = scrobble_mutopia(
+                term,
+                download_pdf=download_pdf,
+                mode="test" if test_mode else "full",
+                log=log_fn,
+                source=source,
+                cancel_event=cancel_event,
+            )
+            with scrub_state["lock"]:
+                scrub_state["summary"] = summary
+                scrub_state["running"] = False
+                scrub_state["cancel"] = None
+        except Exception as exc:
+            scrub_log_append(f"Error: {exc}")
+            with scrub_state["lock"]:
+                scrub_state["error"] = str(exc)
+                scrub_state["running"] = False
+                scrub_state["cancel"] = None
+
+    thread = threading.Thread(target=worker, daemon=True)
+    thread.start()
+    return True, None
+
+
+def get_scrub_status():
+    with scrub_state["lock"]:
+        return {
+            "running": scrub_state["running"],
+            "log": list(scrub_state["log"]),
+            "summary": list(scrub_state["summary"]),
+            "error": scrub_state["error"],
+            "can_cancel": bool(scrub_state.get("cancel")),
+        }
+
+
+def cancel_mass_ai_thread():
+    with mass_ai_state["lock"]:
+        if not mass_ai_state["running"] or not mass_ai_state["cancel"]:
+            return False, "No job running."
+        mass_ai_state["log"].append("Cancelling…")
+        mass_ai_state["cancel"].set()
+        return True, None
+
+
+def get_mass_ai_status():
+    with mass_ai_state["lock"]:
+        return {
+            "running": mass_ai_state["running"],
+            "folder": mass_ai_state["folder"],
+            "log": list(mass_ai_state["log"]),
+        }
 
 
 @app.route("/admin/mass-ai", methods=["GET", "POST"])
@@ -1160,29 +1777,14 @@ def admin_mass_ai():
     if not ADMIN_MODE or not AI_ENABLED:
         return redirect(url_for("browse"))
 
-    status_message = None
-    log_lines: list[str] = []
-    folders = list_top_level_folders()
+    folders = [{"name": f.name} for f in list_top_level_folders()]
+    status = get_mass_ai_status()
 
-    if request.method == "POST":
-        folder_name = request.form.get("folder")
-        target_folder = BASE_DIR / folder_name
-        if not folder_name or not target_folder.exists() or not target_folder.is_dir():
-            status_message = "Invalid folder."
-        else:
-            try:
-                processed = mass_ai_process_folder(target_folder, log_lines)
-                status_message = f"Processed {processed} files in {folder_name}."
-            except Exception as exc:
-                status_message = f"Error: {exc}"
-
-    folder_entries = [{"name": f.name} for f in folders]
     return render_template(
         "admin_mass_ai.html",
         admin_mode=ADMIN_MODE,
-        folders=folder_entries,
-        status=status_message,
-        logs=log_lines,
+        folders=folders,
+        status=status,
     )
 
 
@@ -1193,23 +1795,245 @@ def admin_pdf_cleanup():
 
     status_message = None
     folders = list_top_level_folders()
-    selected = None
+    selected = folders[0].name if folders else None
+    folder_stats = [{"name": f.name, **folder_pdf_stats(f)} for f in folders]
 
     if request.method == "POST":
-        folder_name = request.form.get("folder")
+        folder_name = request.form.get("folder") or selected
         selected = folder_name
         target_folder = BASE_DIR / folder_name
         if not folder_name or not target_folder.exists() or not target_folder.is_dir():
             status_message = "Invalid folder."
         else:
             try:
-                removed = cleanup_pdfs_in_folder(target_folder)
-                status_message = f"Removed {removed} PDFs in {folder_name}."
+                removed, bytes_saved = cleanup_pdfs_in_folder(target_folder)
+                status_message = f"Removed {removed} PDFs in {folder_name} ({human_readable_bytes(bytes_saved)} freed)."
             except Exception as exc:
                 status_message = f"Error: {exc}"
+        folder_stats = [
+            {"name": f.name, **folder_pdf_stats(f)} for f in folders]
 
     return render_template(
         "admin_pdf_cleanup.html",
+        admin_mode=ADMIN_MODE,
+        folders=folder_stats,
+        selected=selected,
+        status=status_message,
+    )
+
+
+@app.route("/admin/link-parts", methods=["GET", "POST"])
+def admin_link_parts():
+    if not ADMIN_MODE:
+        return redirect(url_for("browse"))
+
+    folders = list_top_level_folders()
+    selected = (
+        request.args.get("folder")
+        or request.form.get("folder")
+        or (folders[0].name if folders else None)
+    )
+    status_message = None
+    entries: list[dict] = []
+
+    if selected:
+        target = BASE_DIR / selected
+        if target.exists() and target.is_dir():
+            entries = collect_link_candidates(target)
+        else:
+            status_message = "Invalid folder."
+            entries = []
+
+    if request.method == "POST" and selected and entries:
+        rel_paths = request.form.getlist("rel_path")
+        work_ids = request.form.getlist("work_id")
+        part_labels = request.form.getlist("part_label")
+        updated = 0
+
+        for rel_path, work_value, part_value in zip(rel_paths, work_ids, part_labels):
+            if not rel_path:
+                continue
+            try:
+                midi_path = get_safe_path(rel_path)
+            except Exception:
+                continue
+            if not is_midi_file(midi_path):
+                continue
+            meta = load_meta(midi_path) or {}
+            normalized_work = slugify(work_value or meta.get(WORK_ID_FIELD) or midi_path.stem) or midi_path.stem
+            normalized_part = slugify(part_value or meta.get(PART_LABEL_FIELD) or DEFAULT_PART_LABEL) or DEFAULT_PART_LABEL
+            if meta.get(WORK_ID_FIELD) == normalized_work and meta.get(PART_LABEL_FIELD) == normalized_part:
+                continue
+            meta[WORK_ID_FIELD] = normalized_work
+            meta[PART_LABEL_FIELD] = normalized_part
+            meta_path = meta_path_for_write(midi_path)
+            meta_path.write_text(
+                yaml.safe_dump(meta, allow_unicode=True, sort_keys=False)
+            )
+            updated += 1
+
+        status_message = f"Linked {updated} files." if updated else "No changes applied."
+        if selected:
+            target = BASE_DIR / selected
+            if target.exists() and target.is_dir():
+                entries = collect_link_candidates(target)
+
+    return render_template(
+        "admin_link_parts.html",
+        admin_mode=ADMIN_MODE,
+        folders=[{"name": folder.name} for folder in folders],
+        selected=selected,
+        entries=entries,
+        status=status_message,
+    )
+
+
+@app.post("/admin/mass-ai/start")
+def admin_mass_ai_start():
+    if not ADMIN_MODE or not AI_ENABLED:
+        abort(403)
+    payload = request.get_json(silent=True) or {}
+    folder_name = payload.get("folder", "")
+    folder_path = BASE_DIR / folder_name
+    if not folder_name or not folder_path.exists() or not folder_path.is_dir():
+        return jsonify({"error": "Invalid folder."}), 400
+    success, error = start_mass_ai_thread(folder_path)
+    if not success:
+        return jsonify({"error": error}), 400
+    return jsonify({"success": True})
+
+
+@app.post("/admin/scrubber/start")
+def admin_scrubber_start():
+    if not ADMIN_MODE:
+        abort(403)
+    payload = request.get_json(silent=True) or {}
+    term = (payload.get("term") or "").strip()
+    download_pdf = bool(payload.get("download_pdf"))
+    test_mode = bool(payload.get("test_mode"))
+    source = payload.get("source") or SCRUB_SOURCES[0]["id"]
+    if not term:
+        return jsonify({"error": "Please enter a search term."}), 400
+    success, error = start_scrub_thread(term, download_pdf, test_mode, source)
+    if not success:
+        return jsonify({"error": error or "Already running."}), 400
+    return jsonify({"success": True})
+
+
+@app.get("/admin/scrubber/status")
+def admin_scrubber_status():
+    if not ADMIN_MODE:
+        abort(403)
+    return jsonify(get_scrub_status())
+
+
+@app.post("/admin/scrubber/cancel")
+def admin_scrubber_cancel():
+    if not ADMIN_MODE:
+        abort(403)
+    with scrub_state["lock"]:
+        cancel_event = scrub_state.get("cancel")
+        if not scrub_state["running"] or not cancel_event:
+            return jsonify({"error": "No job running."}), 400
+        cancel_event.set()
+        scrub_state["log"].append("Cancelling…")
+    return jsonify({"success": True})
+
+
+@app.post("/admin/mass-ai/cancel")
+def admin_mass_ai_cancel():
+    if not ADMIN_MODE:
+        abort(403)
+    success, error = cancel_mass_ai_thread()
+    if not success:
+        return jsonify({"error": error}), 400
+    return jsonify({"success": True})
+
+
+@app.get("/admin/mass-ai/status")
+def admin_mass_ai_status():
+    if not ADMIN_MODE:
+        abort(403)
+    return jsonify(get_mass_ai_status())
+
+
+@app.route("/admin/composer-clean", methods=["GET", "POST"])
+def admin_composer_clean():
+    if not ADMIN_MODE:
+        return redirect(url_for("browse"))
+
+    folders = list_top_level_folders()
+    selected = (
+        request.args.get("folder")
+        or request.form.get("folder")
+        or (folders[0].name if folders else None)
+    )
+    status_message = None
+    composers: list[dict] = []
+
+    if selected:
+        folder_path = BASE_DIR / selected
+        if folder_path.exists() and folder_path.is_dir():
+            composers = collect_composer_counts(folder_path)
+        else:
+            status_message = "Invalid folder."
+
+    if request.method == "POST" and request.form.get("target"):
+        folder_name = request.form.get("folder")
+        selected = folder_name
+        folder_path = BASE_DIR / folder_name
+        sources = request.form.getlist("sources")
+        target = request.form.get("target", "").strip()
+        if not folder_name or not folder_path.exists() or not folder_path.is_dir():
+            status_message = "Invalid folder."
+        elif not sources or not target:
+            status_message = "Select composers and provide a target name."
+        else:
+            try:
+                updated = merge_composers_in_folder(
+                    folder_path, sources, target)
+                status_message = f"Updated {updated} files."
+            except Exception as exc:
+                status_message = f"Merge failed: {exc}"
+        if folder_path.exists():
+            composers = collect_composer_counts(folder_path)
+
+    return render_template(
+        "admin_composer_cleanup.html",
+        admin_mode=ADMIN_MODE,
+        folders=[{"name": f.name} for f in folders],
+        selected=selected,
+        composers=composers,
+        status=status_message,
+    )
+
+
+@app.route("/admin/ai-reset", methods=["GET", "POST"])
+def admin_ai_reset():
+    if not ADMIN_MODE:
+        return redirect(url_for("browse"))
+
+    folders = list_top_level_folders()
+    selected = "__all__"
+    status_message = None
+
+    if request.method == "POST":
+        selected = request.form.get("folder") or "__all__"
+        folder_path = None
+        if selected != "__all__":
+            folder_path = BASE_DIR / selected
+            if not folder_path.exists() or not folder_path.is_dir():
+                folder_path = None
+                status_message = "Invalid folder."
+        try:
+            reset_count = reset_ai_flags(folder_path)
+            scope = "entire library" if folder_path is None else selected
+            status_message = f"Reset AI flags on {reset_count} files in {scope}."
+        except Exception as exc:
+            status_message = f"Reset failed: {exc}"
+
+    return render_template(
+        "admin_ai_reset.html",
         admin_mode=ADMIN_MODE,
         folders=[{"name": f.name} for f in folders],
         selected=selected,
@@ -1222,55 +2046,20 @@ def admin_scrubber():
     if not ADMIN_MODE:
         return redirect(url_for("browse"))
 
-    summary = []
-    status_message = None
-    term = ""
-    download_pdf = True
-    test_mode = False
-    source = SCRUB_SOURCES[0]["id"]
-    log_lines: list[str] = []
-
-    def log_fn(message: str):
-        print(f"[Magic Midi Finder {message}")
-        log_lines.append(message)
-
-    if request.method == "POST":
-        term = (request.form.get("term") or "").strip()
-        download_pdf = request.form.get("download_pdf") == "on"
-        test_mode = request.form.get("test_mode") == "on"
-        source = request.form.get("source") or source
-        if not term:
-            status_message = "Please enter a search term."
-        else:
-            try:
-                summary = scrobble_mutopia(
-                    term,
-                    download_pdf=download_pdf,
-                    mode="test" if test_mode else "full",
-                    log=log_fn,
-                    source=source,
-                )
-                added_count = sum(
-                    1 for item in summary if "downloaded" in item.get("status", "").lower()
-                )
-                status_message = (
-                    f"Processed {len(summary)} listings. Added or updated {added_count} entries."
-                )
-            except Exception as exc:
-                status_message = f"Error while scraping: {exc}"
-                log_fn(status_message)
-
+    status = get_scrub_status()
+    term = request.args.get("term", "")
     return render_template(
         "admin_scrubber.html",
         admin_mode=ADMIN_MODE,
-        summary=summary,
-        status=status_message,
+        summary=status.get("summary") or [],
+        status=None,
         term=term,
-        download_pdf=download_pdf,
-        test_mode=test_mode,
+        download_pdf=True,
+        test_mode=False,
         sources=SCRUB_SOURCES,
-        source=source,
-        logs=log_lines,
+        source=SCRUB_SOURCES[0]["id"],
+        logs=status.get("log") or [],
+        running=status.get("running"),
     )
 
 

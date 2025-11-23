@@ -4,7 +4,11 @@
         <meta charset="utf-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
         <title>King Midis</title>
-        <link rel="icon" type="image/png" href="{{ url_for('static', filename='images/logo.png') }}" />
+        <link
+            rel="icon"
+            type="image/png"
+            href="{{ url_for('static', filename='images/logo.png') }}"
+        />
 
         <script>
             (function () {
@@ -17,18 +21,24 @@
                 }
             })();
         </script>
-        <link
-            rel="stylesheet"
-            href="https://unpkg.com/@picocss/pico@2.0.0-rc1/css/pico.min.css"
-        />
+        <link rel="stylesheet" href="https://unpkg.com/@picocss/pico@2.0.0-rc1/css/pico.min.css" />
         <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}" />
     </head>
     <body data-admin="{{ 'true' if admin_mode else 'false' }}" data-logo-base="default">
         <main class="container">
             <header class="page-header">
                 <div class="header-brand">
-                    <a href="{{ url_for('browse') }}" class="brand-link" aria-label="King Midis home">
-                        <span class="brand-logo" data-logo-state="default" role="img" aria-label="King Midis logo"></span>
+                    <a
+                        href="{{ url_for('browse') }}"
+                        class="brand-link"
+                        aria-label="King Midis home"
+                    >
+                        <span
+                            class="brand-logo"
+                            data-logo-state="default"
+                            role="img"
+                            aria-label="King Midis logo"
+                        ></span>
                     </a>
                     <div>
                         <p class="eyebrow">Collection</p>
@@ -40,7 +50,11 @@
                     {% if admin_mode %}
                     <a href="{{ url_for('admin_home') }}" class="admin-link">Admin</a>
                     {% endif %}
-                    <button id="themeToggle" class="theme-toggle contrast" aria-label="Switch theme">
+                    <button
+                        id="themeToggle"
+                        class="theme-toggle contrast"
+                        aria-label="Switch theme"
+                    >
                         🌙
                     </button>
                 </div>
@@ -66,22 +80,29 @@
                     {% for e in entries %} {% if e.is_dir %}
                     <li class="dir">
                         <span class="file-label">📁 {{ e.name }}</span>
-                        <a href="{{ url_for('browse', subpath=e.rel_path) }}" role="button"
-                            >Open</a
-                        >
+                        <a href="{{ url_for('browse', subpath=e.rel_path) }}" role="button">Open</a>
                     </li>
 
                     {% elif e.is_midi %}
                     <li class="midi">
                         <div class="file-content">
                             <div class="file-text">
-                                <span class="file-label">{{ e.instrument_icon }} {{ e.display_name }}</span>
+                                <span class="file-label">
+                                    {{ e.instrument_icon }} {{ e.display_name }}
+                                    {% if e.meta.part_display %}
+                                    <small class="file-part-label">· {{ e.meta.part_display }}</small>
+                                    {% endif %}
+                                </span>
 
                                 {% if e.meta.has_meta %}
                                 <details class="meta-details">
                                     <summary class="meta-summary">
-                                        <span class="meta-summary__label">{{ e.meta.license }}</span>
-                                        <span class="meta-summary__chevron" aria-hidden="true">⌄</span>
+                                        <span class="meta-summary__label"
+                                            >{{ e.meta.license }}</span
+                                        >
+                                        <span class="meta-summary__chevron" aria-hidden="true"
+                                            >⌄</span
+                                        >
                                     </summary>
 
                                     <div class="meta-panel">
@@ -101,46 +122,38 @@
                                                 <p class="meta-label">Contributor</p>
                                                 <p>{{ e.meta.contributor }}</p>
                                             </div>
-                                            {% endif %}
-
-                                            {% if e.meta.modified_by %}
+                                            {% endif %} {% if e.meta.modified_by %}
                                             <div>
                                                 <p class="meta-label">Modified by</p>
                                                 <p>{{ e.meta.modified_by }}</p>
                                             </div>
-                                            {% endif %}
-
-                                            {% if e.meta.source %}
+                                            {% endif %} {% if e.meta.source %}
                                             <div>
                                                 <p class="meta-label">Source</p>
                                                 <p>{{ e.meta.source }}</p>
                                             </div>
+                                            {% endif %} {% if e.meta.instruments %}
+                                            <div>
+                                                <p class="meta-label">Instruments</p>
+                                                <p>{{ e.meta.instruments | join(", ") }}</p>
+                                            </div>
+                                            {% endif %} {% if e.meta.genre %}
+                                            <div>
+                                                <p class="meta-label">Genre</p>
+                                                <p>{{ e.meta.genre }}</p>
+                                            </div>
+                                            {% endif %} {% if e.meta.tags %}
+                                            <div>
+                                                <p class="meta-label">Tags</p>
+                                                <p>{{ e.meta.tags | join(", ") }}</p>
+                                            </div>
                                             {% endif %}
-
-                                        {% if e.meta.instruments %}
-                                        <div>
-                                            <p class="meta-label">Instruments</p>
-                                            <p>{{ e.meta.instruments | join(", ") }}</p>
                                         </div>
-                                        {% endif %}
-
-                                        {% if e.meta.genre %}
-                                        <div>
-                                            <p class="meta-label">Genre</p>
-                                            <p>{{ e.meta.genre }}</p>
-                                        </div>
-                                        {% endif %}
-
-                                        {% if e.meta.tags %}
-                                        <div>
-                                            <p class="meta-label">Tags</p>
-                                            <p>{{ e.meta.tags | join(", ") }}</p>
-                                        </div>
-                                        {% endif %}
-                                    </div>
 
                                         <div class="meta-footer">
-                                            <span class="meta-license">Licensed under {{ e.meta.license }}</span>
+                                            <span class="meta-license"
+                                                >Licensed under {{ e.meta.license }}</span
+                                            >
 
                                             <button
                                                 type="button"
@@ -163,10 +176,15 @@
                                     data-midi-url="{{ url_for('midi_file', subpath=e.rel_path) }}"
                                     data-midi-name="{{ e.display_name }}"
                                     data-instrument-default="{{ e.instrument_id }}"
-                                {% if e.meta.form_defaults.bpm %}
-                                data-midi-bpm="{{ e.meta.form_defaults.bpm }}"
-                                {% endif %}
-                            >
+                                    {%
+                                    if
+                                    e.meta.form_defaults.bpm
+                                    %}
+                                    data-midi-bpm="{{ e.meta.form_defaults.bpm }}"
+                                    {%
+                                    endif
+                                    %}
+                                >
                                     ▶ <span class="sr-only">Preview</span>
                                 </button>
 
@@ -186,9 +204,7 @@
                                 >
                                     📜 <span class="sr-only">Download sheet music</span>
                                 </a>
-                                {% endif %}
-
-                                {% if admin_mode %}
+                                {% endif %} {% if admin_mode %}
                                 <button
                                     type="button"
                                     class="icon-btn edit-btn"
@@ -202,7 +218,6 @@
                                 {% endif %}
                             </div>
                         </div>
-
                     </li>
 
                     {% endif %} {% endfor %}
@@ -233,9 +248,8 @@
                 </div>
 
                 <div class="player-instruments" role="group" aria-label="Instrument presets">
-                    {% set primary_presets = instrument_presets[:3] %}
-                    {% set extra_presets = instrument_presets[3:] %}
-                    {% for preset in primary_presets %}
+                    {% set primary_presets = instrument_presets[:3] %} {% set extra_presets =
+                    instrument_presets[3:] %} {% for preset in primary_presets %}
                     <button
                         type="button"
                         class="instrument-btn {% if loop.first %}active{% endif %}"
@@ -244,8 +258,7 @@
                     >
                         {{ preset.emoji }}
                     </button>
-                    {% endfor %}
-                    {% if extra_presets %}
+                    {% endfor %} {% if extra_presets %}
                     <div class="instrument-more">
                         <button
                             type="button"
@@ -293,14 +306,31 @@
                     <h3>Edit Listing</h3>
                     <div class="admin-header-actions">
                         {% if openai_enabled %}
-                        <button type="button" id="adminAI" class="admin-ai icon-btn" title="AI assist">
+                        <button
+                            type="button"
+                            id="adminAI"
+                            class="admin-ai icon-btn"
+                            title="AI assist"
+                        >
                             🤖
                         </button>
                         {% endif %}
-                        <button type="button" id="adminQuickSave" class="admin-save icon-btn" title="Save">
+                        <button
+                            type="button"
+                            id="adminQuickSave"
+                            class="admin-save icon-btn"
+                            title="Save"
+                        >
                             💾
                         </button>
-                        <button type="button" id="adminClose" class="admin-close icon-btn" title="Close">✕</button>
+                        <button
+                            type="button"
+                            id="adminClose"
+                            class="admin-close icon-btn"
+                            title="Close"
+                        >
+                            ✕
+                        </button>
                     </div>
                 </div>
 
@@ -313,6 +343,19 @@
                     </label>
 
                     <input type="hidden" name="attachments" id="entryAttachments" />
+                    <input type="hidden" name="ai_scraped" id="entryAiFlag" />
+                    <input type="hidden" name="work_id" id="entryWorkId" />
+                    <input type="hidden" name="part_label" id="entryPartLabelValue" />
+
+                    <div id="linkedPartNotice" class="linked-part-notice hidden">
+                        <p class="linked-part-note">
+                            Editing metadata updates every part that shares this work.
+                        </p>
+                        <label>
+                            Part
+                            <input type="text" id="entryPartDisplay" readonly />
+                        </label>
+                    </div>
 
                     <label>
                         Title
@@ -326,7 +369,7 @@
 
                     <label>
                         Contributor
-                        <input type="text" id="entryContributor" readonly />
+                        <input type="text" id="entryContributor" />
                     </label>
 
                     <label>
@@ -336,12 +379,12 @@
 
                     <label>
                         Source
-                        <input type="text" id="entrySource" readonly />
+                        <input type="text" id="entrySource" />
                     </label>
 
                     <label>
                         License
-                        <input type="text" id="entryLicense" readonly />
+                        <input type="text" id="entryLicense" />
                     </label>
 
                     <label>
@@ -372,7 +415,9 @@
                         <button type="button" id="adminCancel" class="secondary">Cancel</button>
                         <button type="submit" class="contrast">Save</button>
                     </div>
-                    <button type="button" id="adminDelete" class="danger full-width">Delete entry</button>
+                    <button type="button" id="adminDelete" class="danger full-width">
+                        Delete entry
+                    </button>
 
                     <p id="adminStatus" class="admin-status"></p>
                 </form>
@@ -413,9 +458,7 @@
                         localStorage.setItem(STORAGE_KEY, theme);
                     }
                     updateLabel(theme);
-                    window.dispatchEvent(
-                        new CustomEvent("km-theme-change", { detail: { theme } })
-                    );
+                    window.dispatchEvent(new CustomEvent("km-theme-change", { detail: { theme } }));
                 };
 
                 const currentTheme = root.getAttribute("data-theme") || "dark";
@@ -431,6 +474,5 @@
                 });
             });
         </script>
-
     </body>
 </html>

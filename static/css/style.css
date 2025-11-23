@@ -95,6 +95,7 @@ main.container {
   from {
     transform: scale(1);
   }
+
   to {
     transform: scale(1.05);
   }
@@ -151,6 +152,29 @@ main.container {
   font-size: 1.3rem;
 }
 
+.stats-card {
+  margin-bottom: 1.5rem;
+}
+
+.stats-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 1rem;
+}
+
+.stat-label {
+  text-transform: uppercase;
+  font-size: 0.7rem;
+  color: var(--text-subtle);
+  letter-spacing: 0.12em;
+  margin-bottom: 0.15rem;
+}
+
+.stat-value {
+  font-size: 1.2rem;
+  font-weight: 600;
+}
+
 .file-list {
   list-style: none;
   padding-left: 0;
@@ -174,6 +198,29 @@ main.container {
 .file-list li:hover {
   border-color: var(--border-color);
   transform: translateX(2px);
+}
+
+.tool-item {
+  padding: 0;
+}
+
+.tool-button {
+  width: 100%;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: linear-gradient(125deg, rgba(123, 126, 251, 0.2), rgba(177, 92, 255, 0.15));
+  color: inherit;
+  font-weight: 600;
+  text-align: left;
+  padding: 0.9rem 1.1rem;
+  border-radius: 1rem;
+  cursor: pointer;
+  transition: transform 0.2s ease, border 0.2s ease, box-shadow 0.2s ease;
+}
+
+.tool-button:hover {
+  transform: translateX(3px);
+  border-color: var(--accent);
+  box-shadow: 0 16px 24px rgba(0, 0, 0, 0.25);
 }
 
 .file-list li.midi {
@@ -239,15 +286,24 @@ main.container {
   transform: rotate(180deg);
 }
 
+.meta-details>summary::before,
+.meta-details>summary::after {
+  content: none !important;
+  background: none !important;
+}
+
 .file-actions {
   display: flex;
   align-items: center;
   gap: 0.45rem;
   margin-left: auto;
-  align-self: center;
+  align-self: flex-start;
+  flex-shrink: 0;
 }
 
 .icon-btn {
+  all: unset;
+  box-sizing: border-box;
   width: 42px;
   height: 42px;
   border-radius: 50%;
@@ -260,7 +316,6 @@ main.container {
   cursor: pointer;
   transition: border 0.2s ease, background 0.2s ease, box-shadow 0.2s ease;
   color: inherit;
-  line-height: 1;
 }
 
 .icon-btn:hover {
@@ -372,8 +427,9 @@ summary::-webkit-details-marker {
 .player-bar {
   position: fixed;
   bottom: 0;
-  left: 0;
-  right: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(1100px, 100vw);
   display: flex;
   gap: 1rem;
   align-items: center;
@@ -430,6 +486,12 @@ summary::-webkit-details-marker {
   width: 100%;
 }
 
+.file-part-label {
+  color: var(--text-subtle);
+  font-size: 0.85rem;
+  margin-left: 0.35rem;
+}
+
 .player-progress input[type="range"] {
   flex: 1;
   appearance: none;
@@ -473,6 +535,64 @@ summary::-webkit-details-marker {
   background: rgba(255, 255, 255, 0.04);
 }
 
+.player-progress-track {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.visualizer-shell {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.player-visualizer {
+  width: 100%;
+  height: 150px;
+  border-radius: 1rem;
+  display: block;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  overflow: hidden;
+}
+
+.player-visualizer .piano-roll-visualizer {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  border-radius: inherit;
+  background: rgba(0, 0, 0, 0.25);
+}
+
+.player-visualizer .piano-roll-visualizer svg {
+  width: 100% !important;
+  height: 100% !important;
+}
+
+.player-visualizer svg rect.note {
+  fill: rgba(92, 146, 255, 0.5);
+  stroke: none;
+}
+
+.player-visualizer svg rect.note.active {
+  fill: rgba(187, 197, 255, 0.95);
+}
+
+.player-midi {
+  display: none;
+}
+
+/* hide the old slider visually but keep it for a11y/fallback */
+.player-progress input[type="range"]#progressSlider {
+  margin-top: 0.5rem;
+  width: 100%;
+}
+
 .volume-icon {
   font-size: 1.35rem;
   margin-top: 0.2rem;
@@ -500,8 +620,8 @@ summary::-webkit-details-marker {
   border-radius: 999px;
   background: rgba(255, 255, 255, 0.12);
   outline: none;
-  writing-mode: bt-lr;
-  -webkit-appearance: slider-vertical;
+  writing-mode: vertical-lr;
+  direction: rtl;
   padding: 0 10px;
 }
 
@@ -630,6 +750,41 @@ summary::-webkit-details-marker {
   overflow-y: auto;
 }
 
+.linked-part-notice {
+  border: 1px dashed var(--border-color);
+  border-radius: 0.9rem;
+  padding: 0.85rem;
+  margin-bottom: 1rem;
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.linked-part-note {
+  font-size: 0.85rem;
+  color: var(--text-subtle);
+  margin-bottom: 0.4rem;
+}
+
+.part-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 1rem 0;
+}
+
+.part-table th,
+.part-table td {
+  padding: 0.65rem;
+  border-bottom: 1px solid var(--border-color);
+  vertical-align: top;
+}
+
+.part-table tr.needs-review {
+  background: rgba(255, 166, 0, 0.08);
+}
+
+.part-table small {
+  display: block;
+}
+
 .admin-modal__header {
   display: flex;
   align-items: center;
@@ -676,6 +831,7 @@ summary::-webkit-details-marker {
     transform: scale(1);
     box-shadow: 0 0 0 rgba(123, 126, 251, 0.2);
   }
+
   to {
     transform: scale(1.05);
     box-shadow: 0 0 20px rgba(123, 126, 251, 0.35);
@@ -698,12 +854,37 @@ summary::-webkit-details-marker {
   color: inherit;
 }
 
+.admin-form select {
+  padding: 0.45rem 0.6rem;
+  border-radius: 0.7rem;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  background: rgba(255, 255, 255, 0.05);
+  color: inherit;
+}
+
 .checkbox-field {
   display: flex;
   align-items: center;
   gap: 0.4rem;
   font-size: 0.9rem;
   margin-bottom: 0.85rem;
+}
+
+.composer-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 0.85rem;
+  margin-bottom: 1rem;
+}
+
+.ai-run-btn.running {
+  animation: aiPulse 0.8s ease-in-out infinite alternate;
+  border-color: var(--accent);
+}
+
+.ai-run-btn.disabled {
+  opacity: 0.45;
+  pointer-events: none;
 }
 
 .modal-actions {
@@ -778,6 +959,7 @@ summary::-webkit-details-marker {
     padding: 0;
   }
 }
+
 .theme-toggle {
   width: 48px;
   height: 48px;
@@ -796,6 +978,7 @@ summary::-webkit-details-marker {
 :root[data-theme="light"] .theme-toggle {
   background: rgba(255, 255, 255, 0.8);
 }
+
 .header-actions {
   display: flex;
   align-items: center;
@@ -825,4 +1008,13 @@ summary::-webkit-details-marker {
   gap: 0.4rem;
   font-size: 0.9rem;
   margin-bottom: 0.85rem;
+}
+
+.icon-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.meta-summary__chevron {
+  display: none;
 }

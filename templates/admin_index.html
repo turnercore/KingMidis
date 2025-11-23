@@ -39,23 +39,65 @@
                 </div>
             </header>
 
+            <section class="path-card stats-card">
+                <header>
+                    <h2>Server Stats</h2>
+                </header>
+                <div class="stats-grid">
+                    <div>
+                        <p class="stat-label">Composers</p>
+                        <p class="stat-value">{{ stats.composers }}</p>
+                    </div>
+                    <div>
+                        <p class="stat-label">MIDI Tracks</p>
+                        <p class="stat-value">{{ stats.midis }}</p>
+                    </div>
+                    <div>
+                        <p class="stat-label">Sheet Music</p>
+                        <p class="stat-value">{{ stats.sheets }}</p>
+                    </div>
+                    <div>
+                        <p class="stat-label">Library Size</p>
+                        <p class="stat-value">{{ stats.size }}</p>
+                    </div>
+                </div>
+            </section>
+
             <section class="list-card">
                 <header>
                     <h2>Tools</h2>
                 </header>
 
                 <ul class="file-list">
-                    <li class="dir">
-                        <span class="file-label">Magic Midi Finder</span>
-                        <a href="{{ url_for('admin_scrubber') }}" role="button">Open</a>
+                    <li class="dir tool-item">
+                        <button type="button" class="tool-button" onclick="window.location='{{ url_for('admin_scrubber') }}'">
+                            Magic Midi Finder
+                        </button>
                     </li>
-                    <li class="dir">
-                        <span class="file-label">Mass AI Helper</span>
-                        <a href="{{ url_for('admin_mass_ai') }}" role="button">Open</a>
+                    <li class="dir tool-item">
+                        <button type="button" class="tool-button" onclick="window.location='{{ url_for('admin_mass_ai') }}'">
+                            Mass AI Helper
+                        </button>
                     </li>
-                    <li class="dir">
-                        <span class="file-label">Bulk PDF Cleanup</span>
-                        <a href="{{ url_for('admin_pdf_cleanup') }}" role="button">Open</a>
+                    <li class="dir tool-item">
+                        <button type="button" class="tool-button" onclick="window.location='{{ url_for('admin_link_parts') }}'">
+                            Link Parts
+                        </button>
+                    </li>
+                    <li class="dir tool-item">
+                        <button type="button" class="tool-button" onclick="window.location='{{ url_for('admin_pdf_cleanup') }}'">
+                            Bulk PDF Cleanup
+                        </button>
+                    </li>
+                    <li class="dir tool-item">
+                        <button type="button" class="tool-button" onclick="window.location='{{ url_for('admin_composer_clean') }}'">
+                            Composer Cleanup
+                        </button>
+                    </li>
+                    <li class="dir tool-item">
+                        <button type="button" class="tool-button" onclick="window.location='{{ url_for('admin_ai_reset') }}'">
+                            Reset AI Flags
+                        </button>
                     </li>
                 </ul>
             </section>

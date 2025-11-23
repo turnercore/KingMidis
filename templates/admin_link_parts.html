@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+    <head>
+        <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <title>Link Parts — King Midis</title>
+        <link rel="icon" type="image/png" href="{{ url_for('static', filename='images/logo.png') }}" />
+        <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}" />
+        <script>
+            (function () {
+                try {
+                    const stored = localStorage.getItem("km-theme");
+                    const preferred = stored || "dark";
+                    document.documentElement.setAttribute("data-theme", preferred);
+                } catch (err) {
+                    document.documentElement.setAttribute("data-theme", "dark");
+                }
+            })();
+        </script>
+    </head>
+    <body data-logo-base="work" data-admin="true">
+        <main class="container">
+            <header class="page-header">
+                <div class="header-brand">
+                    <a href="{{ url_for('browse') }}" class="brand-link" aria-label="King Midis home">
+                        <span class="brand-logo" data-logo-state="work" role="img" aria-label="King Midis logo"></span>
+                    </a>
+                    <div>
+                        <p class="eyebrow">Admin · Tool</p>
+                        <h1>Link Parts</h1>
+                    </div>
+                </div>
+
+                <div class="header-actions">
+                    <a href="{{ url_for('admin_home') }}" class="admin-link">Admin Home</a>
+                    <button id="themeToggle" class="theme-toggle contrast" aria-label="Switch theme">
+                        🌙
+                    </button>
+                </div>
+            </header>
+
+            <section class="path-card">
+                <form method="GET" class="admin-form">
+                    <label>
+                        Scan folder
+                        <select name="folder" required onchange="this.form.submit()">
+                            {% for folder in folders %}
+                            <option value="{{ folder.name }}" {% if folder.name == selected %}selected{% endif %}>
+                                {{ folder.name }}
+                            </option>
+                            {% endfor %}
+                        </select>
+                    </label>
+                    <p class="muted">
+                        Detects shared works by filename stem and lets you fix mismatched part labels.
+                    </p>
+                </form>
+                {% if status %}
+                <p class="admin-status">{{ status }}</p>
+                {% endif %}
+            </section>
+
+            {% if entries %}
+            <section class="list-card">
+                <header>
+                    <h2>Detected Parts ({{ entries|length }})</h2>
+                </header>
+                <form method="POST" class="admin-form" id="linkPartsForm">
+                    <input type="hidden" name="folder" value="{{ selected }}" />
+                    <table class="part-table">
+                        <thead>
+                            <tr>
+                                <th>File</th>
+                                <th>Work ID</th>
+                                <th>Part Label</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for entry in entries %}
+                            <tr class="{% if entry.needs_review %}needs-review{% endif %}">
+                                <td data-label="File">
+                                    <code>{{ entry.name }}</code>
+                                    <input type="hidden" name="rel_path" value="{{ entry.rel_path }}" />
+                                </td>
+                                <td data-label="Work ID">
+                                    <input
+                                        type="text"
+                                        name="work_id"
+                                        value="{{ entry.initial_work_id }}"
+                                        required
+                                    />
+                                    {% if entry.work_id != entry.suggested_work_id %}
+                                    <small class="muted">Suggestion: {{ entry.suggested_work_id }}</small>
+                                    {% endif %}
+                                </td>
+                                <td data-label="Part Label">
+                                    <input
+                                        type="text"
+                                        name="part_label"
+                                        value="{{ entry.initial_part_label }}"
+                                        required
+                                    />
+                                    <small class="muted">{{ entry.part_display }}</small>
+                                    {% if entry.part_label != entry.suggested_part_label %}
+                                    <small class="muted">Suggestion: {{ entry.suggested_part_label }}</small>
+                                    {% endif %}
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                    <p class="muted">Work IDs are shared per arrangement; part labels stay unique per file.</p>
+                    <div class="modal-actions">
+                        <button type="submit" class="contrast full-width" id="linkPartsSubmit">Save links</button>
+                    </div>
+                </form>
+            </section>
+            {% else %}
+            <section class="list-card">
+                <p class="muted">No MIDI files found in this folder.</p>
+            </section>
+            {% endif %}
+        </main>
+
+        <script src="{{ url_for('static', filename='js/logo.js') }}"></script>
+        <script>
+            document.addEventListener("DOMContentLoaded", () => {
+                const toggle = document.getElementById("themeToggle");
+                const root = document.documentElement;
+                const STORAGE_KEY = "km-theme";
+
+                const updateTheme = (theme) => {
+                    root.setAttribute("data-theme", theme);
+                    localStorage.setItem(STORAGE_KEY, theme);
+                    toggle.textContent = theme === "dark" ? "🌙" : "☀️";
+                };
+
+                const currentTheme = root.getAttribute("data-theme") || "dark";
+                updateTheme(currentTheme);
+
+                toggle.addEventListener("click", () => {
+                    const active = root.getAttribute("data-theme") || "dark";
+                    updateTheme(active === "dark" ? "light" : "dark");
+                });
+
+                const linkForm = document.getElementById("linkPartsForm");
+                const submitBtn = document.getElementById("linkPartsSubmit");
+                if (linkForm && submitBtn) {
+                    linkForm.addEventListener("submit", () => {
+                        submitBtn.disabled = true;
+                        submitBtn.dataset.originalText = submitBtn.textContent;
+                        submitBtn.textContent = "Saving…";
+                    });
+                }
+            });
+        </script>
+    </body>
+</html>
