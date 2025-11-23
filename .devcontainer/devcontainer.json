@@ -1,0 +1,32 @@
+{
+    "name": "kingmidis-dev",
+    "build": {
+        "dockerfile": "../Dockerfile",
+        "context": ".."
+    },
+    "workspaceFolder": "/workspaces/kingmidis",
+
+    "forwardPorts": [5000],
+
+    "containerEnv": {
+        "MIDI_ROOT": "/workspaces/kingmidis/Midis",
+        "FLASK_APP": "app.py",
+        "FLASK_RUN_HOST": "0.0.0.0",
+        "FLASK_RUN_PORT": "5000"
+    },
+
+    "postCreateCommand": "pip install -r requirements.txt",
+
+    "customizations": {
+        "vscode": {
+            "settings": {
+                "python.defaultInterpreterPath": "/usr/local/bin/python",
+                "python.testing.pytestEnabled": true,
+                "python.formatting.provider": "black"
+            },
+            "extensions": ["ms-python.python", "ms-python.vscode-pylance"]
+        }
+    },
+
+    "remoteUser": "vscode"
+}

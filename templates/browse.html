@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html>
+    <head>
+        <meta charset="utf-8" />
+        <title>MIDI Browser</title>
+
+        <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}" />
+    </head>
+    <body>
+        <h1>MIDI Browser</h1>
+
+        <div class="path">
+            Current path:
+            <code>/{{ subpath if subpath else '' }}</code>
+        </div>
+
+        {% if parent_rel is not none %}
+        <div class="nav-up">
+            <a href="{{ url_for('browse', subpath=parent_rel) }}">⬅ Up one level</a>
+        </div>
+        {% endif %}
+
+        <ul class="file-list">
+            {% for e in entries %} {% if e.is_dir %}
+            <li class="dir">
+                📁 <a href="{{ url_for('browse', subpath=e.rel_path) }}">{{ e.name }}/</a>
+            </li>
+
+            {% elif e.is_midi %}
+            <li class="midi">
+                🎹 {{ e.name }}
+
+                <button
+                    class="play-btn"
+                    data-midi-url="{{ url_for('midi_file', subpath=e.rel_path) }}"
+                >
+                    ▶ Play
+                </button>
+            </li>
+
+            {% else %}
+            <li class="file">📄 {{ e.name }}</li>
+            {% endif %} {% endfor %}
+        </ul>
+
+        <div id="status" class="status">Idle</div>
+
+        <!-- Libraries -->
+        <script src="https://cdn.jsdelivr.net/npm/tone/build/Tone.js"></script>
+        <script src="https://cdn.jsdelivr.net/npm/@tonejs/midi/dist/Midi.js"></script>
+
+        <!-- Your player logic -->
+        <script src="{{ url_for('static', filename='js/player.js') }}"></script>
+    </body>
+</html>

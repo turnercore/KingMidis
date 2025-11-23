@@ -1,0 +1,53 @@
+body {
+  font-family: system-ui, -apple-system, sans-serif;
+  padding: 1rem 2rem;
+  background: #fafafa;
+}
+
+h1 {
+  font-size: 1.4rem;
+  margin-bottom: 0.5rem;
+}
+
+.path {
+  color: #666;
+  font-size: 0.9rem;
+  margin-bottom: 1rem;
+}
+
+.nav-up {
+  margin-bottom: 0.5rem;
+}
+
+.file-list {
+  list-style: none;
+  padding-left: 0;
+}
+
+.file-list li {
+  margin: 0.25rem 0;
+  padding: 0.1rem 0;
+}
+
+.dir {
+  font-weight: 600;
+}
+
+.play-btn {
+  margin-left: 0.5rem;
+  font-size: 0.8rem;
+  padding: 0.15rem 0.5rem;
+  cursor: pointer;
+  border: 1px solid #ccc;
+  background: #fff;
+}
+
+.play-btn:hover {
+  background: #f0f0f0;
+}
+
+.status {
+  margin-top: 1rem;
+  font-size: 0.85rem;
+  color: #555;
+}
