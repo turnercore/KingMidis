@@ -376,7 +376,7 @@ function initAdminEditor() {
     const fields = {
         name: document.getElementById("entryName"),
         composer: document.getElementById("entryComposer"),
-        editor: document.getElementById("entryEditor"),
+        contributor: document.getElementById("entryContributor"),
         modified_by: document.getElementById("entryModifier"),
         source: document.getElementById("entrySource"),
         license: document.getElementById("entryLicense"),
@@ -400,7 +400,7 @@ function initAdminEditor() {
     const collectMetadata = () => ({
         name: fields.name.value,
         composer: fields.composer.value,
-        editor: fields.editor.value,
+        contributor: fields.contributor.value,
         modified_by: fields.modified_by.value,
         source: fields.source.value,
         license: fields.license.value,
@@ -431,7 +431,7 @@ function initAdminEditor() {
         slugInput.value = button.dataset.slug || "";
         fields.name.value = metaDefaults.name || "";
         fields.composer.value = metaDefaults.composer || "";
-        fields.editor.value = metaDefaults.editor || "";
+        fields.contributor.value = metaDefaults.contributor || "";
         fields.modified_by.value = metaDefaults.modified_by || "";
         fields.source.value = metaDefaults.source || "";
         fields.license.value = metaDefaults.license || "Public Domain";

@@ -96,10 +96,10 @@
                                                 <p>{{ e.meta.composer }}</p>
                                             </div>
 
-                                            {% if e.meta.editor %}
+                                            {% if e.meta.contributor %}
                                             <div>
-                                                <p class="meta-label">Editor</p>
-                                                <p>{{ e.meta.editor }}</p>
+                                                <p class="meta-label">Contributor</p>
+                                                <p>{{ e.meta.contributor }}</p>
                                             </div>
                                             {% endif %}
 
@@ -325,8 +325,8 @@
                     </label>
 
                     <label>
-                        Editor
-                        <input type="text" name="editor" id="entryEditor" />
+                        Contributor
+                        <input type="text" id="entryContributor" readonly />
                     </label>
 
                     <label>
@@ -336,12 +336,12 @@
 
                     <label>
                         Source
-                        <input type="text" name="source" id="entrySource" />
+                        <input type="text" id="entrySource" readonly />
                     </label>
 
                     <label>
                         License
-                        <input type="text" name="license" id="entryLicense" />
+                        <input type="text" id="entryLicense" readonly />
                     </label>
 
                     <label>

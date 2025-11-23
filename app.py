@@ -209,7 +209,7 @@ def build_meta_context(midi_path: Path, meta_data: dict | None, rel_path: str) -
     display_name = meta_data.get("name") or midi_path.stem
 
     composer = meta_data.get("composer") or parent_name or midi_path.stem
-    editor = meta_data.get("editor")
+    contributor = meta_data.get("contributor") or meta_data.get("editor")
     modified_by = meta_data.get("modified_by")
     source = meta_data.get("source")
     instrument_choice = normalize_instrument_choice(
@@ -238,8 +238,8 @@ def build_meta_context(midi_path: Path, meta_data: dict | None, rel_path: str) -
     attachments = collect_attachment_candidates(midi_path, meta_data)
 
     lines = [f"{display_name} by {composer}"]
-    if editor:
-        lines.append(f"Edited by {editor}")
+    if contributor:
+        lines.append(f"Contributed by {contributor}")
     if modified_by:
         lines.append(f"Modified by {modified_by}")
     if source:
@@ -249,7 +249,7 @@ def build_meta_context(midi_path: Path, meta_data: dict | None, rel_path: str) -
     form_defaults = {
         "name": meta_data.get("name", ""),
         "composer": meta_data.get("composer", ""),
-        "editor": meta_data.get("editor", ""),
+        "contributor": contributor or "",
         "modified_by": meta_data.get("modified_by", ""),
         "source": meta_data.get("source", ""),
         "license": meta_data.get("license") or meta_data.get("liscense") or "Public Domain",
@@ -267,7 +267,7 @@ def build_meta_context(midi_path: Path, meta_data: dict | None, rel_path: str) -
         "has_meta": bool(meta_data),
         "display_name": display_name,
         "composer": composer,
-        "editor": editor,
+        "contributor": contributor,
         "modified_by": modified_by,
         "source": source,
         "instrument": instrument_choice,
@@ -377,7 +377,7 @@ def update_metadata_for_path(midi_path: Path, listing: dict, part_label: str | N
         "catalog": listing.get("catalog"),
         "instrumentation": listing.get("instrumentation"),
         "notes": listing.get("notes"),
-        "editor": listing.get("editor"),
+        "contributor": listing.get("contributor") or listing.get("editor"),
     }
 
     changed = False
@@ -476,7 +476,7 @@ def parse_mutopia_table(table) -> dict | None:
                         break
 
     instrument_id = guess_instrument_from_text(instrumentation_text or title)
-    editor_text = cell_text(2, 0)
+    contributor_text = cell_text(2, 0)
 
     return {
         "title": title,
@@ -492,7 +492,7 @@ def parse_mutopia_table(table) -> dict | None:
         "pdf_url": pdf_url,
         "pdf_zip_url": pdf_zip_url,
         "instrument_id": instrument_id,
-        "editor": editor_text,
+        "contributor": contributor_text,
     }
 
 
@@ -910,7 +910,7 @@ def update_entry():
     meta_payload = {
         "name": metadata.get("name", ""),
         "composer": metadata.get("composer", ""),
-        "editor": metadata.get("editor", ""),
+        "contributor": metadata.get("contributor", ""),
         "modified_by": metadata.get("modified_by", ""),
         "source": metadata.get("source", ""),
         "license": metadata.get("license") or "Public Domain",
