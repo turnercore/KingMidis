@@ -23,12 +23,12 @@
         />
         <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}" />
     </head>
-    <body data-admin="{{ 'true' if admin_mode else 'false' }}">
+    <body data-admin="{{ 'true' if admin_mode else 'false' }}" data-logo-base="default">
         <main class="container">
             <header class="page-header">
                 <div class="header-brand">
                     <a href="{{ url_for('browse') }}" class="brand-link" aria-label="King Midis home">
-                        <img src="{{ url_for('static', filename='images/logo.png') }}" alt="King Midis logo" class="brand-logo" />
+                        <span class="brand-logo" data-logo-state="default" role="img" aria-label="King Midis logo"></span>
                     </a>
                     <div>
                         <p class="eyebrow">Collection</p>
@@ -281,7 +281,7 @@
                     value="80"
                     aria-label="Volume"
                 />
-                <span class="volume-icon" aria-hidden="true">🔊</span>
+                <span class="volume-icon" aria-hidden="true" data-muted="false"></span>
                 <span id="volumeLabel" class="sr-only">80%</span>
             </div>
         </div>
@@ -386,6 +386,7 @@
 <script src="https://unpkg.com/@tonejs/midi"></script>
 
         <!-- Your player logic (depends on `Tone` and `Midi` already being loaded) -->
+<script src="{{ url_for('static', filename='js/logo.js') }}"></script>
 <script src="{{ url_for('static', filename='js/player.js') }}"></script>
         <script>
             document.addEventListener("DOMContentLoaded", () => {

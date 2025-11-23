@@ -132,6 +132,18 @@ const INSTRUMENT_PRESETS = {
 };
 let currentInstrumentId = null;
 
+const setLogoPlaying = (flag) => {
+    if (typeof window.kmLogoSetPlaying === "function") {
+        window.kmLogoSetPlaying(flag);
+    }
+};
+
+const setLogoThinking = (flag) => {
+    if (typeof window.kmLogoSetThinking === "function") {
+        window.kmLogoSetThinking(flag);
+    }
+};
+
 function showPlayerBar() {
     if (playerBar) {
         playerBar.classList.remove("hidden");
@@ -200,6 +212,8 @@ function persistVolume(value) {
     }
 }
 
+let lastNonZeroVolume = null;
+
 function volumeToDb(value) {
     const minDb = -48;
     const maxDb = 0;
@@ -212,6 +226,10 @@ function applyVolume(value, { persist = true, updateSlider = true } = {}) {
     const clamped = Math.min(Math.max(value, 0), 100);
     const db = volumeToDb(clamped);
     Tone.Destination.volume.rampTo(db, 0.05);
+
+    if (clamped > 0) {
+        lastNonZeroVolume = clamped;
+    }
 
     if (updateSlider && volumeSlider) {
         volumeSlider.value = String(clamped);
@@ -228,6 +246,7 @@ function applyVolume(value, { persist = true, updateSlider = true } = {}) {
 
 function initVolumeControl() {
     const initialVolume = readStoredVolume();
+    lastNonZeroVolume = initialVolume || DEFAULT_VOLUME;
     applyVolume(initialVolume, { persist: false, updateSlider: true });
 
     if (!volumeSlider) return;
@@ -239,6 +258,26 @@ function initVolumeControl() {
     };
 
     volumeSlider.addEventListener("input", handle);
+
+    const volumeIcon = document.querySelector(".volume-icon");
+    if (volumeIcon) {
+        volumeIcon.addEventListener("click", () => {
+            const current = Number(volumeSlider.value);
+            if (current > 0) {
+                applyVolume(0, { persist: true });
+                volumeIcon.dataset.muted = "true";
+            } else {
+                const restore = lastNonZeroVolume && lastNonZeroVolume > 0 ? lastNonZeroVolume : DEFAULT_VOLUME;
+                applyVolume(restore, { persist: true });
+                volumeIcon.dataset.muted = "false";
+            }
+        });
+
+        volumeSlider.addEventListener("input", () => {
+            const current = Number(volumeSlider.value);
+            volumeIcon.dataset.muted = current <= 0 ? "true" : "false";
+        });
+    }
 }
 
 function initMetaCopyButtons() {
@@ -388,6 +427,7 @@ function initAdminEditor() {
     };
 
     const setAiState = (running) => {
+        setLogoThinking(running);
         if (aiBtn) {
             aiBtn.disabled = running;
             aiBtn.classList.toggle("loading", running);
@@ -603,6 +643,7 @@ function handlePlaybackFinished() {
     Tone.Transport.stop();
     Tone.Transport.position = 0;
     isPlaying = false;
+    setLogoPlaying(false);
     updatePlayPauseButton();
     setStatus("Finished");
 
@@ -634,6 +675,7 @@ function teardownPlayback() {
     }
 
     isPlaying = false;
+    setLogoPlaying(false);
     currentButton = null;
 }
 
@@ -641,6 +683,7 @@ function pauseTransportPlayback() {
     if (!currentPart || !isPlaying) return;
     Tone.Transport.pause();
     isPlaying = false;
+    setLogoPlaying(false);
     stopProgressLoop();
     setStatus("Paused");
     updatePlayPauseButton();
@@ -653,6 +696,7 @@ function resumeTransportPlayback() {
     if (!currentPart || isPlaying) return;
     Tone.Transport.start();
     isPlaying = true;
+    setLogoPlaying(true);
     startProgressLoop();
     setStatus("Playing");
     updatePlayPauseButton();
@@ -720,6 +764,7 @@ async function loadAndPlayMidi(url, name, btn) {
         teardownPlayback();
         resetButtons();
         resetPlayerUi();
+        setLogoPlaying(false);
 
         if (titleEl) titleEl.textContent = name;
         setStatus("Loading MIDI...");
@@ -767,6 +812,7 @@ async function loadAndPlayMidi(url, name, btn) {
         Tone.Transport.position = 0;
         Tone.Transport.start();
         isPlaying = true;
+        setLogoPlaying(true);
         updatePlayPauseButton();
         enablePlayerControls();
         startProgressLoop();
@@ -783,6 +829,7 @@ async function loadAndPlayMidi(url, name, btn) {
         resetButtons();
         resetPlayerUi();
         currentButton = null;
+        setLogoPlaying(false);
     }
 }
 

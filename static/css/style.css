@@ -61,8 +61,39 @@ main.container {
 .brand-logo {
   width: 72px;
   height: 72px;
-  object-fit: contain;
+  display: inline-block;
   flex-shrink: 0;
+  border-radius: 16px;
+  background-position: center;
+  background-repeat: no-repeat;
+  background-size: contain;
+  transition: transform 0.2s ease;
+}
+
+.brand-logo[data-logo-state="default"] {
+  background-image: url("../images/logo.png");
+}
+
+.brand-logo[data-logo-state="sing"] {
+  background-image: url("../images/logo-sing.png");
+}
+
+.brand-logo[data-logo-state="work"] {
+  background-image: url("../images/logo-work.png");
+}
+
+.brand-logo[data-logo-state="thinking"] {
+  background-image: url("../images/logo-thinking.png");
+  animation: logoPulse 1s ease-in-out infinite alternate;
+}
+
+@keyframes logoPulse {
+  from {
+    transform: scale(1);
+  }
+  to {
+    transform: scale(1.05);
+  }
 }
 
 .page-header h1 {
@@ -439,8 +470,23 @@ summary::-webkit-details-marker {
 }
 
 .volume-icon {
-  font-size: 1.25rem;
+  font-size: 1.35rem;
   margin-top: 0.2rem;
+  cursor: pointer;
+  transition: transform 0.15s ease;
+}
+
+.volume-icon[data-muted="true"]::after {
+  content: "🔇";
+}
+
+.volume-icon[data-muted="false"]::after,
+.volume-icon:not([data-muted])::after {
+  content: "🔊";
+}
+
+.volume-icon::after {
+  display: block;
 }
 
 .player-volume input[type="range"] {

@@ -109,6 +109,7 @@
             {% endif %}
         </main>
 
+        <script src="{{ url_for('static', filename='js/logo.js') }}"></script>
         <script>
             document.addEventListener("DOMContentLoaded", () => {
                 const toggle = document.getElementById("themeToggle");
@@ -133,6 +134,9 @@
 
                 if (form) {
                     form.addEventListener("submit", () => {
+                        if (typeof window.kmLogoSetThinking === "function") {
+                            window.kmLogoSetThinking(true);
+                        }
                         if (statusEl) {
                             statusEl.textContent = "Scrubbing… check the console for live progress.";
                         }

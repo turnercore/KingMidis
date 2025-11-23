@@ -17,12 +17,12 @@
             })();
         </script>
     </head>
-    <body>
+<body data-logo-base="work">
         <main class="container">
             <header class="page-header">
                 <div class="header-brand">
                     <a href="{{ url_for('browse') }}" class="brand-link" aria-label="King Midis home">
-                        <img src="{{ url_for('static', filename='images/logo.png') }}" alt="King Midis logo" class="brand-logo" />
+                        <span class="brand-logo" data-logo-state="work" role="img" aria-label="King Midis logo"></span>
                     </a>
                     <div>
                         <p class="eyebrow">Admin</p>
@@ -52,6 +52,7 @@
             </section>
         </main>
 
+        <script src="{{ url_for('static', filename='js/logo.js') }}"></script>
         <script>
             document.addEventListener("DOMContentLoaded", () => {
                 const toggle = document.getElementById("themeToggle");
