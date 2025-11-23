@@ -17,8 +17,50 @@ const buttons = document.querySelectorAll(".play-btn");
 const SLIDER_MAX = progressSlider ? Number(progressSlider.max) || 1000 : 1000;
 const volumeSlider = document.getElementById("volumeSlider");
 const volumeLabel = document.getElementById("volumeLabel");
+const instrumentButtons = document.querySelectorAll(".instrument-btn[data-instrument]");
+const moreToggleBtn = document.querySelector(".instrument-btn.more-toggle");
+const instrumentDropdown = document.querySelector(".instrument-dropdown");
 const VOLUME_STORAGE_KEY = "km-volume";
+const INSTRUMENT_STORAGE_KEY = "km-instrument";
 const DEFAULT_VOLUME = 80;
+const INSTRUMENT_PRESETS = {
+    piano: {
+        label: "Piano",
+        create: () =>
+            new Tone.PolySynth(Tone.Synth, {
+                oscillator: { type: "triangle" },
+                envelope: { attack: 0.005, decay: 1, sustain: 0.4, release: 1.2 },
+            }).toDestination(),
+    },
+    digital: {
+        label: "Digital",
+        create: () =>
+            new Tone.PolySynth(Tone.AMSynth, {
+                harmonicity: 2.5,
+                oscillator: { type: "sawtooth" },
+                envelope: { attack: 0.02, decay: 0.3, sustain: 0.3, release: 0.8 },
+            }).toDestination(),
+    },
+    strings: {
+        label: "Strings",
+        create: () =>
+            new Tone.PolySynth(Tone.Synth, {
+                oscillator: { type: "sawtooth" },
+                envelope: { attack: 0.2, decay: 0.6, sustain: 0.7, release: 2.5 },
+                filter: { type: "lowpass", Q: 3 },
+            }).toDestination(),
+    },
+    guitar: {
+        label: "Guitar",
+        create: () =>
+            new Tone.PolySynth(Tone.FMSynth, {
+                harmonicity: 3,
+                modulationIndex: 10,
+                envelope: { attack: 0.01, decay: 0.4, sustain: 0.3, release: 1.2 },
+            }).toDestination(),
+    },
+};
+let currentInstrumentId = null;
 
 function showPlayerBar() {
     if (playerBar) {
@@ -120,10 +162,13 @@ function initVolumeControl() {
 
     if (!volumeSlider) return;
 
-    volumeSlider.addEventListener("input", () => {
+    const handle = (evt) => {
+        evt.preventDefault();
         const value = Number(volumeSlider.value);
         applyVolume(value, { persist: true, updateSlider: false });
-    });
+    };
+
+    volumeSlider.addEventListener("input", handle);
 }
 
 function initMetaCopyButtons() {
@@ -148,6 +193,79 @@ function initMetaCopyButtons() {
     });
 }
 
+function readStoredInstrument() {
+    try {
+        const stored = localStorage.getItem(INSTRUMENT_STORAGE_KEY);
+        if (stored && INSTRUMENT_PRESETS[stored]) {
+            return stored;
+        }
+    } catch (error) {
+        console.warn("Instrument storage read failed", error);
+    }
+    return "piano";
+}
+
+function persistInstrument(value) {
+    try {
+        localStorage.setItem(INSTRUMENT_STORAGE_KEY, value);
+    } catch (error) {
+        console.warn("Instrument storage write failed", error);
+    }
+}
+
+function createSynthForPreset(presetId) {
+    const preset = INSTRUMENT_PRESETS[presetId] || INSTRUMENT_PRESETS.piano;
+    return preset.create();
+}
+
+function applyInstrumentSelection(presetId, { persist = true } = {}) {
+    if (!INSTRUMENT_PRESETS[presetId]) {
+        presetId = "piano";
+    }
+
+    if (currentInstrumentId === presetId) return;
+
+    currentInstrumentId = presetId;
+    if (persist) persistInstrument(presetId);
+
+    instrumentButtons.forEach((btn) => {
+        btn.classList.toggle("active", btn.dataset.instrument === presetId);
+    });
+
+    if (currentSynth) {
+        const newSynth = createSynthForPreset(presetId);
+        currentSynth.dispose();
+        currentSynth = newSynth;
+    }
+}
+
+function initInstrumentControls() {
+    if (!instrumentButtons.length) return;
+
+    const initial = readStoredInstrument();
+    currentInstrumentId = initial;
+    instrumentButtons.forEach((btn) => {
+        btn.classList.toggle("active", btn.dataset.instrument === initial);
+        btn.addEventListener("click", () => {
+            applyInstrumentSelection(btn.dataset.instrument);
+            if (instrumentDropdown && !instrumentDropdown.classList.contains("hidden")) {
+                instrumentDropdown.classList.add("hidden");
+                if (moreToggleBtn) {
+                    moreToggleBtn.setAttribute("aria-expanded", "false");
+                }
+            }
+        });
+    });
+
+    if (moreToggleBtn && instrumentDropdown) {
+        moreToggleBtn.addEventListener("click", () => {
+            const isOpen = !instrumentDropdown.classList.contains("hidden");
+            instrumentDropdown.classList.toggle("hidden", isOpen);
+            moreToggleBtn.setAttribute("aria-expanded", String(!isOpen));
+        });
+    }
+}
+
 function initAdminEditor() {
     const modal = document.getElementById("adminModal");
     const form = document.getElementById("adminForm");
@@ -155,6 +273,7 @@ function initAdminEditor() {
 
     const closeBtn = document.getElementById("adminClose");
     const cancelBtn = document.getElementById("adminCancel");
+    const quickSaveBtn = document.getElementById("adminQuickSave");
     const statusEl = document.getElementById("adminStatus");
 
     const relInput = document.getElementById("entryRelPath");
@@ -166,7 +285,8 @@ function initAdminEditor() {
         modified_by: document.getElementById("entryModifier"),
         source: document.getElementById("entrySource"),
         license: document.getElementById("entryLicense"),
-        instruments: document.getElementById("entryInstruments"),
+        instrument: document.getElementById("entryInstrument"),
+        bpm: document.getElementById("entryBpm"),
     };
 
     const hideModal = () => {
@@ -192,7 +312,8 @@ function initAdminEditor() {
         fields.modified_by.value = metaDefaults.modified_by || "";
         fields.source.value = metaDefaults.source || "";
         fields.license.value = metaDefaults.license || "Public Domain";
-        fields.instruments.value = metaDefaults.instruments || "";
+        fields.instrument.value = button.dataset.instrument || metaDefaults.instrument || "piano";
+        fields.bpm.value = metaDefaults.bpm || "";
 
         statusEl.textContent = "";
         modal.classList.remove("hidden");
@@ -206,6 +327,12 @@ function initAdminEditor() {
         if (!btn) return;
         btn.addEventListener("click", hideModal);
     });
+
+    if (quickSaveBtn) {
+        quickSaveBtn.addEventListener("click", () => {
+            form.requestSubmit();
+        });
+    }
 
     modal.addEventListener("click", (event) => {
         if (event.target === modal) {
@@ -227,7 +354,8 @@ function initAdminEditor() {
                 modified_by: fields.modified_by.value,
                 source: fields.source.value,
                 license: fields.license.value,
-                instruments: fields.instruments.value,
+                instrument: fields.instrument.value,
+                bpm: fields.bpm.value,
             },
         };
 
@@ -257,7 +385,7 @@ function initAdminEditor() {
 
 function resetButtons() {
     buttons.forEach((btn) => {
-        btn.textContent = "▶ Preview";
+        btn.innerHTML = "▶";
         btn.dataset.playing = "false";
         btn.classList.remove("is-active");
     });
@@ -349,7 +477,7 @@ function pauseTransportPlayback() {
     setStatus("Paused");
     updatePlayPauseButton();
     if (currentButton) {
-        currentButton.textContent = "Paused";
+        currentButton.innerHTML = "▶";
     }
 }
 
@@ -361,7 +489,7 @@ function resumeTransportPlayback() {
     setStatus("Playing");
     updatePlayPauseButton();
     if (currentButton) {
-        currentButton.textContent = "Playing…";
+        currentButton.innerHTML = "⏸";
     }
 }
 
@@ -425,18 +553,35 @@ async function loadAndPlayMidi(url, name, btn) {
 
         if (btn) {
             btn.classList.add("is-active");
-            btn.textContent = "Loading…";
+            btn.innerHTML = "⏳";
         }
 
         const midi = await Midi.fromUrl(url);
         const tempos = midi.header && midi.header.tempos ? midi.header.tempos : [];
         const tempoEvent = tempos.length ? tempos[0] : null;
-        Tone.Transport.bpm.value = tempoEvent && tempoEvent.bpm ? tempoEvent.bpm : 120;
+        let bpmOverride = null;
+        if (btn && btn.dataset.midiBpm) {
+            const parsed = Number(btn.dataset.midiBpm);
+            if (Number.isFinite(parsed) && parsed > 0) {
+                bpmOverride = parsed;
+            }
+        }
+        Tone.Transport.bpm.value =
+            bpmOverride ??
+            (tempoEvent && tempoEvent.bpm ? tempoEvent.bpm : 120);
 
         midiDuration = calcMidiDuration(midi);
         if (totalTimeEl) totalTimeEl.textContent = formatTime(midiDuration);
 
-        currentSynth = new Tone.PolySynth(Tone.Synth).toDestination();
+        const desiredInstrument =
+            (btn && btn.dataset.instrumentDefault) || currentInstrumentId || readStoredInstrument();
+        applyInstrumentSelection(desiredInstrument, { persist: false });
+
+        if (!currentInstrumentId) {
+            currentInstrumentId = desiredInstrument;
+        }
+
+        currentSynth = createSynthForPreset(currentInstrumentId);
         const events = collectEvents(midi);
 
         currentPart = new Tone.Part((time, note) => {
@@ -452,7 +597,7 @@ async function loadAndPlayMidi(url, name, btn) {
 
         if (btn) {
             btn.dataset.playing = "true";
-            btn.textContent = "Playing…";
+            btn.innerHTML = "⏸";
         }
 
         setStatus("Playing");
@@ -562,4 +707,5 @@ window.addEventListener("beforeunload", () => {
 
 initVolumeControl();
 initMetaCopyButtons();
+initInstrumentControls();
 initAdminEditor();

@@ -1,8 +1,11 @@
-from flask import Flask, render_template, send_from_directory, abort, request, jsonify
+from flask import Flask, render_template, send_from_directory, abort, request, jsonify, redirect, url_for
 from pathlib import Path
 import os
 import re
 import yaml
+import requests
+from urllib.parse import urljoin
+from bs4 import BeautifulSoup
 
 app = Flask(__name__)
 
@@ -13,31 +16,27 @@ ADMIN_MODE = os.environ.get("ADMIN_MODE", "").lower() in ("1", "true", "yes")
 META_SUFFIXES = [".meta", ".yml", ".yaml"]
 DEFAULT_META_SUFFIX = ".yml"
 SHEET_SUFFIX = ".pdf"
+MUTOPIA_SEARCH_ENDPOINT = "https://www.mutopiaproject.org/cgibin/make-table.cgi"
 
-INSTRUMENT_ICONS = {
-    "piano": "🎹",
-    "keyboard": "🎹",
-    "organ": "🎹",
-    "violin": "🎻",
-    "strings": "🎻",
-    "cello": "🎻",
-    "orchestra": "🎻",
-    "guitar": "🎸",
-    "bass": "🎸",
-    "drum": "🥁",
-    "percussion": "🥁",
-    "flute": "🪈",
-    "clarinet": "🪈",
-    "sax": "🎷",
-    "saxophone": "🎷",
-    "trumpet": "🎺",
-    "horn": "🎺",
-    "trombone": "🎺",
-    "voice": "🎤",
-    "choir": "🎤",
-    "harp": "🎼",
-}
-DEFAULT_INSTRUMENT_ICON = "🎹"
+INSTRUMENT_PRESETS = [
+    {"id": "piano", "label": "Grand Piano", "emoji": "🎹"},
+    {"id": "digital", "label": "Digital Synth", "emoji": "🎛️"},
+    {"id": "strings", "label": "Strings", "emoji": "🎻"},
+    {"id": "guitar", "label": "Guitar", "emoji": "🎸"},
+    {"id": "harp", "label": "Harp", "emoji": "🎼"},
+    {"id": "brass", "label": "Brass", "emoji": "🎺"},
+    {"id": "voice", "label": "Choir/Voice", "emoji": "🎤"},
+]
+DEFAULT_INSTRUMENT_ID = "piano"
+INSTRUMENT_LOOKUP = {preset["id"]: preset for preset in INSTRUMENT_PRESETS}
+INSTRUMENT_KEYWORDS = [
+    (["guitar"], "guitar"),
+    (["harp"], "harp"),
+    (["choir", "voice", "vocal", "soprano", "alto", "tenor", "bass"], "voice"),
+    (["violin", "viola", "cello", "string", "orchestra", "ensemble"], "strings"),
+    (["flute", "oboe", "clarinet", "wind"], "strings"),
+    (["organ", "harpsichord", "synth", "keyboard"], "digital"),
+]
 
 MIDI_EXTENSIONS = [".mid", ".midi"]
 
@@ -50,6 +49,22 @@ def get_safe_path(subpath: str) -> Path:
     if full != BASE_DIR and BASE_DIR not in full.parents:
         abort(404)
     return full
+
+
+def slugify(value: str) -> str:
+    value = (value or "").strip().lower()
+    value = re.sub(r"[^a-z0-9]+", "-", value)
+    value = re.sub(r"-{2,}", "-", value).strip("-")
+    return value or "midi"
+
+
+def guess_instrument_from_text(text: str) -> str:
+    haystack = (text or "").lower()
+    for keywords, preset_id in INSTRUMENT_KEYWORDS:
+        for keyword in keywords:
+            if keyword in haystack:
+                return preset_id
+    return DEFAULT_INSTRUMENT_ID
 
 
 def load_meta(midi_path: Path) -> dict | None:
@@ -68,26 +83,35 @@ def load_meta(midi_path: Path) -> dict | None:
     return None
 
 
-def normalize_instruments(instruments_field) -> list[str]:
-    if isinstance(instruments_field, str):
-        return [instruments_field.strip()] if instruments_field.strip() else []
-    if isinstance(instruments_field, (list, tuple)):
-        cleaned = []
-        for inst in instruments_field:
-            if not inst:
-                continue
-            cleaned.append(str(inst).strip())
-        return [inst for inst in cleaned if inst]
-    return []
+def ensure_meta(midi_path: Path) -> dict:
+    meta = load_meta(midi_path)
+    if meta is not None:
+        return meta
+
+    default_meta = {
+        "name": midi_path.stem,
+        "composer": midi_path.parent.name,
+        "license": "Public Domain",
+        "instrument": DEFAULT_INSTRUMENT_ID,
+    }
+    meta_path = meta_path_for_write(midi_path)
+    meta_path.write_text(yaml.safe_dump(default_meta, allow_unicode=True, sort_keys=False))
+    return default_meta
 
 
-def instrument_icon_for(instruments: list[str]) -> str:
-    for inst in instruments:
-        key = inst.lower()
-        for alias, icon in INSTRUMENT_ICONS.items():
-            if alias in key:
-                return icon
-    return DEFAULT_INSTRUMENT_ICON
+def normalize_instrument_choice(value) -> str:
+    if isinstance(value, str) and value.strip():
+        candidate = value.strip().lower()
+        for preset in INSTRUMENT_PRESETS:
+            if preset["id"] == candidate:
+                return preset["id"]
+
+        # legacy, check for emoji or label containing substring
+        for preset in INSTRUMENT_PRESETS:
+            if candidate in preset["label"].lower() or candidate in preset["emoji"]:
+                return preset["id"]
+
+    return DEFAULT_INSTRUMENT_ID
 
 
 def build_meta_context(midi_path: Path, meta_data: dict | None, rel_path: str) -> dict:
@@ -99,7 +123,9 @@ def build_meta_context(midi_path: Path, meta_data: dict | None, rel_path: str) -
     editor = meta_data.get("editor")
     modified_by = meta_data.get("modified_by")
     source = meta_data.get("source")
-    instruments = normalize_instruments(meta_data.get("instruments"))
+    instrument_choice = normalize_instrument_choice(meta_data.get("instrument") or meta_data.get("instruments"))
+    preset_lookup = {preset["id"]: preset for preset in INSTRUMENT_PRESETS}
+    preset = preset_lookup.get(instrument_choice, preset_lookup[DEFAULT_INSTRUMENT_ID])
 
     license_value = (
         meta_data.get("license")
@@ -123,8 +149,11 @@ def build_meta_context(midi_path: Path, meta_data: dict | None, rel_path: str) -
         "modified_by": meta_data.get("modified_by", ""),
         "source": meta_data.get("source", ""),
         "license": meta_data.get("license") or meta_data.get("liscense") or "Public Domain",
-        "instruments": ", ".join(instruments),
+        "instrument": instrument_choice,
+        "bpm": meta_data.get("bpm") or meta_data.get("tempo") or "",
     }
+
+    preset = INSTRUMENT_LOOKUP.get(instrument_choice) or INSTRUMENT_LOOKUP[DEFAULT_INSTRUMENT_ID]
 
     return {
         "has_meta": bool(meta_data),
@@ -133,12 +162,13 @@ def build_meta_context(midi_path: Path, meta_data: dict | None, rel_path: str) -
         "editor": editor,
         "modified_by": modified_by,
         "source": source,
-        "instruments": instruments,
+        "instrument": instrument_choice,
         "license": license_value,
         "attribution_text": "\n".join(lines),
         "rel_path": rel_path,
         "form_defaults": form_defaults,
-        "instrument_icon": instrument_icon_for(instruments),
+        "instrument_icon": preset["emoji"],
+        "instrument_label": preset["label"],
     }
 
 
@@ -175,6 +205,218 @@ def rename_sidecars(original_path: Path, new_stem: str):
             old_path.rename(old_path.with_name(new_stem + suffix))
 
 
+def locate_sheet_path(midi_path: Path) -> Path | None:
+    base = midi_path.with_suffix(SHEET_SUFFIX)
+    if base.exists():
+        return base
+
+    possible_suffixes = ["-a4", "-letter"]
+    for suffix in possible_suffixes:
+        candidate = midi_path.with_name(f"{midi_path.stem}{suffix}{SHEET_SUFFIX}")
+        if candidate.exists():
+            return candidate
+
+    return None
+
+
+def download_file(url: str, destination: Path) -> None:
+    resp = requests.get(url, timeout=30, headers={"User-Agent": "KingMidis/1.0"})
+    resp.raise_for_status()
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    destination.write_bytes(resp.content)
+
+
+def clean_composer_name(raw: str) -> str:
+    text = re.sub(r"\(.*?\)", "", raw or "")
+    text = re.sub(r"^by\s+", "", text, flags=re.IGNORECASE)
+    return " ".join(text.split())
+
+
+def parse_mutopia_table(table) -> dict | None:
+    rows = table.find_all("tr")
+    if len(rows) < 4:
+        return None
+
+    def cell(row_index: int, col_index: int):
+        try:
+            return rows[row_index].find_all("td")[col_index]
+        except Exception:
+            return None
+
+    def cell_text(row_index: int, col_index: int) -> str:
+        c = cell(row_index, col_index)
+        if not c:
+            return ""
+        return " ".join(c.stripped_strings)
+
+    title = cell_text(0, 0)
+    if not title:
+        return None
+
+    composer = clean_composer_name(cell_text(0, 1))
+    catalog = cell_text(0, 2)
+    instrumentation_text = cell_text(1, 0)
+    period = cell_text(1, 1)
+    style = cell_text(1, 2)
+    notes = cell_text(2, 0)
+    license_cell = cell(2, 1)
+    license_text = ""
+    if license_cell:
+        link = license_cell.find("a")
+        license_text = link.get_text(strip=True) if link else cell_text(2, 1)
+
+    midi_cell = cell(3, 1)
+    if not midi_cell:
+        return {"title": title, "skip": "no midi link"}
+    if "zipped" in midi_cell.get("class", []):
+        return {"title": title, "skip": "midi archive skipped"}
+    midi_link = midi_cell.find("a")
+    if not midi_link:
+        return {"title": title, "skip": "no midi link"}
+    midi_url = urljoin(MUTOPIA_SEARCH_ENDPOINT, midi_link["href"])
+    if midi_url.endswith(".zip"):
+        return {"title": title, "skip": "midi archive skipped"}
+
+    pdf_url = None
+    pdf_row = rows[4] if len(rows) > 4 else None
+    if pdf_row:
+        pdf_cells = pdf_row.find_all("td")
+        for td in pdf_cells:
+            if "zipped" in td.get("class", []):
+                continue
+            link = td.find("a")
+            if not link:
+                continue
+            href = urljoin(MUTOPIA_SEARCH_ENDPOINT, link["href"])
+            if href.endswith(".pdf"):
+                pdf_url = href
+                if "-a4" in href:
+                    break
+
+    instrument_id = guess_instrument_from_text(instrumentation_text or title)
+
+    return {
+        "title": title,
+        "composer": composer or "Unknown",
+        "catalog": catalog,
+        "instrumentation": instrumentation_text,
+        "period": period,
+        "style": style,
+        "notes": notes,
+        "license": license_text,
+        "midi_url": midi_url,
+        "pdf_url": pdf_url,
+        "instrument_id": instrument_id,
+    }
+
+
+def scrobble_mutopia(search_term: str, download_pdf: bool = True) -> list[dict]:
+    sanitized_term = slugify(search_term)
+    target_dir = BASE_DIR / sanitized_term
+    target_dir.mkdir(parents=True, exist_ok=True)
+    results = []
+    start_offset = 0
+
+    while True:
+        params = {
+            "searchingfor": search_term,
+            "Composer": "",
+            "Instrument": "",
+            "Style": "",
+            "collection": "",
+            "id": "",
+            "solo": "",
+            "recent": "",
+            "timelength": 1,
+            "timeunit": "week",
+            "lilyversion": "",
+            "preview": "",
+            "startat": start_offset,
+        }
+        resp = requests.get(
+            MUTOPIA_SEARCH_ENDPOINT,
+            params=params,
+            timeout=30,
+            headers={"User-Agent": "KingMidis/1.0"},
+        )
+        resp.raise_for_status()
+        soup = BeautifulSoup(resp.text, "html.parser")
+        tables = soup.select("table.result-table")
+        if not tables:
+            if start_offset == 0:
+                results.append({"title": "No results", "status": "Nothing found"})
+            break
+
+        for table in tables:
+            listing = parse_mutopia_table(table)
+            if not listing:
+                continue
+            if listing.get("skip"):
+                results.append({"title": listing.get("title"), "status": listing["skip"]})
+                continue
+
+            slug = slugify(listing["title"])
+            midi_path = target_dir / f"{slug}.mid"
+            status_bits = []
+
+            if not midi_path.exists():
+                try:
+                    download_file(listing["midi_url"], midi_path)
+                    status_bits.append("MIDI downloaded")
+                except Exception as exc:
+                    status_bits.append(f"MIDI failed: {exc}")
+                    results.append({"title": listing["title"], "status": ", ".join(status_bits)})
+                    continue
+            else:
+                status_bits.append("MIDI exists")
+
+            if download_pdf and listing.get("pdf_url"):
+                pdf_path = target_dir / f"{slug}-a4.pdf"
+                if not pdf_path.exists():
+                    try:
+                        download_file(listing["pdf_url"], pdf_path)
+                        status_bits.append("PDF downloaded")
+                    except Exception as exc:
+                        status_bits.append(f"PDF failed: {exc}")
+                else:
+                    status_bits.append("PDF exists")
+
+            meta_payload = {
+                "name": listing["title"],
+                "composer": listing["composer"],
+                "license": listing["license"] or "Public Domain",
+                "source": "Mutopia Project",
+                "instrument": listing["instrument_id"],
+                "style": listing["style"],
+                "period": listing["period"],
+                "catalog": listing["catalog"],
+                "instrumentation": listing["instrumentation"],
+                "notes": listing["notes"],
+            }
+            existing_meta = load_meta(midi_path)
+            merged_meta = dict(existing_meta) if existing_meta else {}
+            for key, value in meta_payload.items():
+                if value and not merged_meta.get(key):
+                    merged_meta[key] = value
+
+            meta_path = meta_path_for_write(midi_path)
+            meta_path.write_text(
+                yaml.safe_dump(merged_meta, allow_unicode=True, sort_keys=False)
+            )
+            status_bits.append("Metadata updated" if existing_meta else "Metadata created")
+
+            print(f"[Scrubber] {listing['title']}: {', '.join(status_bits)}")
+            results.append({"title": listing["title"], "status": ", ".join(status_bits)})
+
+        next_link = soup.find("a", string=lambda text: text and "Next 10" in text)
+        if next_link:
+            start_offset += 10
+        else:
+            break
+
+    return results
+
+
 @app.route("/", defaults={"subpath": ""})
 @app.route("/browse/", defaults={"subpath": ""})
 @app.route("/browse/<path:subpath>")
@@ -202,19 +444,17 @@ def browse(subpath: str):
         }
 
         if is_midi:
-            meta_data = load_meta(child)
+            meta_data = ensure_meta(child)
             meta_context = build_meta_context(child, meta_data, str(rel))
             entry["meta"] = meta_context
             entry["instrument_icon"] = meta_context["instrument_icon"]
-            sheet_path = child.with_suffix(SHEET_SUFFIX)
-            if sheet_path.exists() and sheet_path.is_file():
-                entry["sheet_rel_path"] = str(sheet_path.relative_to(BASE_DIR))
-            else:
-                entry["sheet_rel_path"] = None
+            entry["instrument_id"] = meta_context["form_defaults"].get("instrument", DEFAULT_INSTRUMENT_ID)
+            sheet_path = locate_sheet_path(child)
+            entry["sheet_rel_path"] = str(sheet_path.relative_to(BASE_DIR)) if sheet_path else None
         else:
             entry["meta"] = None
             entry["sheet_rel_path"] = None
-            entry["instrument_icon"] = DEFAULT_INSTRUMENT_ICON
+            entry["instrument_icon"] = INSTRUMENT_LOOKUP[DEFAULT_INSTRUMENT_ID]["emoji"]
 
         entries.append(entry)
 
@@ -227,7 +467,8 @@ def browse(subpath: str):
         entries=entries,
         subpath=subpath,
         parent_rel=parent_rel,
-        admin_mode=ADMIN_MODE
+        admin_mode=ADMIN_MODE,
+        instrument_presets=INSTRUMENT_PRESETS,
     )
 
 
@@ -283,13 +524,17 @@ def update_entry():
         rename_sidecars(old_path, sanitized_slug)
         updated_path = target_path
 
-    instruments_field = metadata.get("instruments") or []
-    if isinstance(instruments_field, str):
-        instruments = [inst.strip() for inst in instruments_field.split(",") if inst.strip()]
-    elif isinstance(instruments_field, (list, tuple)):
-        instruments = [str(inst).strip() for inst in instruments_field if str(inst).strip()]
-    else:
-        instruments = []
+    instrument_choice = normalize_instrument_choice(metadata.get("instrument"))
+
+    bpm_value = metadata.get("bpm") or metadata.get("tempo")
+    if isinstance(bpm_value, str):
+        bpm_value = bpm_value.strip()
+        bpm_value = bpm_value or None
+    if bpm_value is not None:
+        try:
+            bpm_value = float(bpm_value)
+        except ValueError:
+            bpm_value = None
 
     meta_payload = {
         "name": metadata.get("name", ""),
@@ -298,8 +543,10 @@ def update_entry():
         "modified_by": metadata.get("modified_by", ""),
         "source": metadata.get("source", ""),
         "license": metadata.get("license") or "Public Domain",
-        "instruments": instruments,
+        "instrument": instrument_choice,
     }
+    if bpm_value:
+        meta_payload["bpm"] = bpm_value
 
     meta_path = meta_path_for_write(updated_path)
     meta_path.write_text(
@@ -311,6 +558,47 @@ def update_entry():
             "success": True,
             "rel_path": str(updated_path.relative_to(BASE_DIR)),
         }
+    )
+
+
+@app.route("/admin")
+def admin_home():
+    if not ADMIN_MODE:
+        return redirect(url_for("browse"))
+
+    return render_template("admin_index.html", admin_mode=ADMIN_MODE)
+
+
+@app.route("/admin/scrubber", methods=["GET", "POST"])
+def admin_scrubber():
+    if not ADMIN_MODE:
+        return redirect(url_for("browse"))
+
+    summary = []
+    status_message = None
+    term = ""
+    download_pdf = True
+
+    if request.method == "POST":
+        term = (request.form.get("term") or "").strip()
+        download_pdf = request.form.get("download_pdf") == "on"
+        if not term:
+            status_message = "Please enter a search term."
+        else:
+            try:
+                summary = scrobble_mutopia(term, download_pdf=download_pdf)
+                added_count = sum(1 for item in summary if "Added" in item.get("status", ""))
+                status_message = f"Processed {len(summary)} listings. Added {added_count} new files."
+            except Exception as exc:
+                status_message = f"Error while scraping: {exc}"
+
+    return render_template(
+        "admin.html",
+        admin_mode=ADMIN_MODE,
+        summary=summary,
+        status=status_message,
+        term=term,
+        download_pdf=download_pdf,
     )
 
 

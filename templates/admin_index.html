@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+    <head>
+        <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <title>Admin — King Midis</title>
+        <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}" />
+    </head>
+    <body>
+        <main class="container">
+            <header class="page-header">
+                <div>
+                    <p class="eyebrow">Admin</p>
+                    <h1>Control Room</h1>
+                </div>
+
+                <div class="header-actions">
+                    <a href="{{ url_for('browse') }}" class="admin-link">Back</a>
+                    <button id="themeToggle" class="theme-toggle contrast" aria-label="Switch theme">
+                        🌙
+                    </button>
+                </div>
+            </header>
+
+            <section class="list-card">
+                <header>
+                    <h2>Tools</h2>
+                </header>
+
+                <ul class="file-list">
+                    <li class="dir">
+                        <span class="file-label">Scrubber</span>
+                        <a href="{{ url_for('admin_scrubber') }}" role="button">Open</a>
+                    </li>
+                </ul>
+            </section>
+        </main>
+
+        <script>
+            document.addEventListener("DOMContentLoaded", () => {
+                const toggle = document.getElementById("themeToggle");
+                const root = document.documentElement;
+                const STORAGE_KEY = "km-theme";
+
+                const updateTheme = (theme) => {
+                    root.setAttribute("data-theme", theme);
+                    localStorage.setItem(STORAGE_KEY, theme);
+                    toggle.textContent = theme === "dark" ? "🌙" : "☀️";
+                };
+
+                const currentTheme = root.getAttribute("data-theme") || "dark";
+                updateTheme(currentTheme);
+
+                toggle.addEventListener("click", () => {
+                    const active = root.getAttribute("data-theme") || "dark";
+                    updateTheme(active === "dark" ? "light" : "dark");
+                });
+            });
+        </script>
+    </body>
+</html>

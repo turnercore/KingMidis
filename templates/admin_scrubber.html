@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+    <head>
+        <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <title>Scrubber — King Midis</title>
+        <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}" />
+        <script>
+            (function () {
+                try {
+                    const stored = localStorage.getItem("km-theme");
+                    const preferred = stored || "dark";
+                    document.documentElement.setAttribute("data-theme", preferred);
+                } catch (err) {
+                    document.documentElement.setAttribute("data-theme", "dark");
+                }
+            })();
+        </script>
+    </head>
+    <body>
+        <main class="container">
+            <header class="page-header">
+                <div>
+                    <p class="eyebrow">Admin · Tool</p>
+                    <h1>Scrubber</h1>
+                </div>
+
+                <div class="header-actions">
+                    <a href="{{ url_for('admin_home') }}" class="admin-link">Admin Home</a>
+                    <button id="themeToggle" class="theme-toggle contrast" aria-label="Switch theme">
+                        🌙
+                    </button>
+                </div>
+            </header>
+
+            <section class="path-card">
+                <form method="POST" class="admin-form" id="scrubForm">
+                    <label>
+                        Search Mutopia for…
+                        <input
+                            type="text"
+                            name="term"
+                            placeholder="e.g., Bach"
+                            value="{{ term }}"
+                            required
+                        />
+                    </label>
+
+                    <label class="checkbox-field">
+                        <input type="checkbox" name="download_pdf" {% if download_pdf %}checked{% endif %} />
+                        <span>Download sheet music (PDF) when available</span>
+                    </label>
+
+                    <div class="modal-actions">
+                        <button type="submit" class="contrast">Scrape &amp; import</button>
+                    </div>
+
+                    {% if status %}
+                    <p class="admin-status">{{ status }}</p>
+                    {% endif %}
+                </form>
+            </section>
+
+            {% if summary %}
+            <section class="list-card">
+                <header>
+                    <h2>Recent activity</h2>
+                </header>
+
+                <ul class="file-list">
+                    {% for item in summary %}
+                    <li class="file">
+                        <span class="file-label">{{ item.title or 'Listing' }}</span>
+                        <span class="muted">{{ item.status }}</span>
+                    </li>
+                    {% endfor %}
+                </ul>
+            </section>
+            {% endif %}
+        </main>
+
+        <script>
+            document.addEventListener("DOMContentLoaded", () => {
+                const toggle = document.getElementById("themeToggle");
+                const root = document.documentElement;
+                const STORAGE_KEY = "km-theme";
+                const form = document.getElementById("scrubForm");
+                const statusEl = document.querySelector(".admin-status");
+
+                const updateTheme = (theme) => {
+                    root.setAttribute("data-theme", theme);
+                    localStorage.setItem(STORAGE_KEY, theme);
+                    toggle.textContent = theme === "dark" ? "🌙" : "☀️";
+                };
+
+                const currentTheme = root.getAttribute("data-theme") || "dark";
+                updateTheme(currentTheme);
+
+                toggle.addEventListener("click", () => {
+                    const active = root.getAttribute("data-theme") || "dark";
+                    updateTheme(active === "dark" ? "light" : "dark");
+                });
+
+                if (form) {
+                    form.addEventListener("submit", () => {
+                        if (statusEl) {
+                            statusEl.textContent = "Scrubbing… check the console for live progress.";
+                        }
+                    });
+                }
+            });
+        </script>
+    </body>
+</html>
