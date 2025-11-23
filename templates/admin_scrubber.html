@@ -4,6 +4,7 @@
         <meta charset="utf-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
         <title>Magic Midi Finder — King Midis</title>
+        <link rel="icon" type="image/png" href="{{ url_for('static', filename='images/logo.png') }}" />
         <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}" />
         <script>
             (function () {
@@ -17,12 +18,12 @@
             })();
         </script>
     </head>
-    <body>
+    <body data-logo-base="search" data-admin="true">
         <main class="container">
             <header class="page-header">
                 <div class="header-brand">
                     <a href="{{ url_for('browse') }}" class="brand-link" aria-label="King Midis home">
-                        <img src="{{ url_for('static', filename='images/logo.png') }}" alt="King Midis logo" class="brand-logo" />
+                        <span class="brand-logo" data-logo-state="search" role="img" aria-label="King Midis logo"></span>
                     </a>
                     <div>
                         <p class="eyebrow">Admin · Tool</p>
@@ -141,6 +142,9 @@
                             statusEl.textContent = "Scrubbing… check the console for live progress.";
                         }
                     });
+                }
+                if (typeof window.kmLogoSetThinking === "function") {
+                    window.kmLogoSetThinking(false);
                 }
             });
         </script>

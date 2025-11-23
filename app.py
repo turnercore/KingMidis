@@ -950,6 +950,45 @@ def update_entry():
     )
 
 
+@app.post("/api/entry/delete")
+def delete_entry():
+    if not ADMIN_MODE:
+        abort(403)
+
+    payload = request.get_json(silent=True) or {}
+    rel_path = payload.get("rel_path")
+    if not rel_path:
+        return jsonify({"error": "Missing rel_path"}), 400
+
+    midi_path = get_safe_path(rel_path)
+    if not is_midi_file(midi_path):
+        abort(404)
+
+    attachments = payload.get("attachments") or []
+    attachments = normalize_attachment_list(attachments)
+
+    parent = midi_path.parent
+
+    files_to_remove = [midi_path]
+    for suffix in META_SUFFIXES + [SHEET_SUFFIX]:
+        candidate = midi_path.with_suffix(suffix)
+        if candidate.exists():
+            files_to_remove.append(candidate)
+
+    for rel in attachments:
+        candidate = parent / rel
+        if candidate.exists() and candidate.is_file():
+            files_to_remove.append(candidate)
+
+    for target in files_to_remove:
+        try:
+            target.unlink(missing_ok=True)
+        except Exception as exc:
+            return jsonify({"error": f"Failed to delete {target.name}: {exc}"}), 500
+
+    return jsonify({"success": True})
+
+
 @app.post("/api/entry/ai-suggest")
 def ai_suggest_metadata():
     if not ADMIN_MODE:

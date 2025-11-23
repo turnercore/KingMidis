@@ -82,6 +82,10 @@ main.container {
   background-image: url("../images/logo-work.png");
 }
 
+.brand-logo[data-logo-state="search"] {
+  background-image: url("../images/logo-search.png");
+}
+
 .brand-logo[data-logo-state="thinking"] {
   background-image: url("../images/logo-thinking.png");
   animation: logoPulse 1s ease-in-out infinite alternate;
@@ -707,6 +711,11 @@ summary::-webkit-details-marker {
   justify-content: flex-end;
   gap: 0.75rem;
   margin-top: 0.75rem;
+}
+
+.admin-form .danger {
+  margin-top: 0.5rem;
+  width: 100%;
 }
 
 .admin-status {

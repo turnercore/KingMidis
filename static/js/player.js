@@ -261,6 +261,7 @@ function initVolumeControl() {
 
     const volumeIcon = document.querySelector(".volume-icon");
     if (volumeIcon) {
+        volumeIcon.dataset.muted = initialVolume <= 0 ? "true" : "false";
         volumeIcon.addEventListener("click", () => {
             const current = Number(volumeSlider.value);
             if (current > 0) {
@@ -409,6 +410,7 @@ function initAdminEditor() {
     const aiBtn = document.getElementById("adminAI");
     const statusEl = document.getElementById("adminStatus");
     const saveBtn = form.querySelector('button[type="submit"]');
+    const deleteBtn = document.getElementById("adminDelete");
 
     const relInput = document.getElementById("entryRelPath");
     const slugInput = document.getElementById("entrySlug");
@@ -435,6 +437,7 @@ function initAdminEditor() {
         }
         if (quickSaveBtn) quickSaveBtn.disabled = running;
         if (saveBtn) saveBtn.disabled = running;
+        if (deleteBtn) deleteBtn.disabled = running;
     };
 
     const collectMetadata = () => ({
@@ -584,6 +587,39 @@ function initAdminEditor() {
                 console.error(error);
                 statusEl.textContent = error.message || "AI request failed";
             } finally {
+                setAiState(false);
+            }
+        });
+    }
+
+    if (deleteBtn) {
+        deleteBtn.addEventListener("click", async () => {
+            if (!relInput.value) return;
+            if (!window.confirm("Delete this MIDI and all attachments?")) {
+                return;
+            }
+            setAiState(true);
+            statusEl.textContent = "Deleting entry…";
+            try {
+                const response = await fetch("/api/entry/delete", {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json",
+                    },
+                    body: JSON.stringify({
+                        rel_path: relInput.value,
+                        attachments: fields.attachments.value,
+                    }),
+                });
+                if (!response.ok) {
+                    const body = await response.json().catch(() => ({}));
+                    throw new Error(body.error || "Delete failed");
+                }
+                statusEl.textContent = "Entry deleted — refreshing…";
+                setTimeout(() => window.location.reload(), 600);
+            } catch (error) {
+                console.error(error);
+                statusEl.textContent = error.message || "Unable to delete entry";
                 setAiState(false);
             }
         });
