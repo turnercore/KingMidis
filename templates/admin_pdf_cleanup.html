@@ -3,7 +3,7 @@
     <head>
         <meta charset="utf-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
-        <title>Admin — King Midis</title>
+        <title>PDF Cleanup — King Midis</title>
         <link rel="icon" type="image/png" href="{{ url_for('static', filename='images/logo.png') }}" />
         <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}" />
         <script>
@@ -18,7 +18,7 @@
             })();
         </script>
     </head>
-<body data-logo-base="work" data-admin="true">
+    <body data-logo-base="work" data-admin="true">
         <main class="container">
             <header class="page-header">
                 <div class="header-brand">
@@ -26,38 +26,44 @@
                         <span class="brand-logo" data-logo-state="work" role="img" aria-label="King Midis logo"></span>
                     </a>
                     <div>
-                        <p class="eyebrow">Admin</p>
-                        <h1>Control Room</h1>
+                        <p class="eyebrow">Admin · Tool</p>
+                        <h1>Bulk PDF Cleanup</h1>
                     </div>
                 </div>
 
                 <div class="header-actions">
-                    <a href="{{ url_for('browse') }}" class="admin-link">Back</a>
+                    <a href="{{ url_for('admin_home') }}" class="admin-link">Admin Home</a>
                     <button id="themeToggle" class="theme-toggle contrast" aria-label="Switch theme">
                         🌙
                     </button>
                 </div>
             </header>
 
-            <section class="list-card">
-                <header>
-                    <h2>Tools</h2>
-                </header>
-
-                <ul class="file-list">
-                    <li class="dir">
-                        <span class="file-label">Magic Midi Finder</span>
-                        <a href="{{ url_for('admin_scrubber') }}" role="button">Open</a>
-                    </li>
-                    <li class="dir">
-                        <span class="file-label">Mass AI Helper</span>
-                        <a href="{{ url_for('admin_mass_ai') }}" role="button">Open</a>
-                    </li>
-                    <li class="dir">
-                        <span class="file-label">Bulk PDF Cleanup</span>
-                        <a href="{{ url_for('admin_pdf_cleanup') }}" role="button">Open</a>
-                    </li>
-                </ul>
+            <section class="path-card">
+                <form method="POST" class="admin-form">
+                    <label>
+                        Select folder
+                        <select name="folder" required>
+                            {% for entry in folders %}
+                            <option value="{{ entry.name }}" {% if entry.name == selected %}selected{% endif %}>
+                                {{ entry.name }}
+                            </option>
+                            {% endfor %}
+                        </select>
+                    </label>
+                    <p class="muted">
+                        Removes PDF attachments from the folder and updates metadata attachment lists.
+                    </p>
+                    <div class="modal-actions">
+                        <button type="submit" class="danger full-width"
+                            onclick="return confirm('Remove all PDFs in this folder?');">
+                            Delete PDFs
+                        </button>
+                    </div>
+                </form>
+                {% if status %}
+                <p class="admin-status">{{ status }}</p>
+                {% endif %}
             </section>
         </main>
 
@@ -81,6 +87,10 @@
                     const active = root.getAttribute("data-theme") || "dark";
                     updateTheme(active === "dark" ? "light" : "dark");
                 });
+
+                if (typeof window.kmLogoSetThinking === "function") {
+                    window.kmLogoSetThinking(false);
+                }
             });
         </script>
     </body>

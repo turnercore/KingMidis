@@ -19,7 +19,7 @@
         logos.forEach((logo) => {
             const elementBase = logoBases.get(logo) || state.base;
             let active = elementBase;
-            if (state.thinking) {
+            if (state.thinking && elementBase !== "search") {
                 active = "thinking";
             } else if (state.playing && elementBase === "default") {
                 active = "sing";

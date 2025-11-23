@@ -21,6 +21,8 @@ ADMIN_MODE = os.environ.get("ADMIN_MODE", "").lower() in ("1", "true", "yes")
 META_SUFFIXES = [".meta", ".yml", ".yaml"]
 DEFAULT_META_SUFFIX = ".yml"
 SHEET_SUFFIX = ".pdf"
+ATTACHMENT_FIELDS = ["attachments"]
+AI_FLAG_FIELD = "ai_scraped"
 MUTOPIA_SEARCH_ENDPOINT = "https://www.mutopiaproject.org/cgibin/make-table.cgi"
 SCRUB_SOURCES = [
     {"id": "mutopia", "label": "Mutopia Project"},
@@ -193,6 +195,17 @@ def collect_attachment_candidates(midi_path: Path, meta_data: dict | None) -> li
     return merge_attachment_lists([manual, auto])
 
 
+def ai_flag_value(meta_data: dict | None) -> bool:
+    value = (meta_data or {}).get(AI_FLAG_FIELD)
+    if isinstance(value, str):
+        value = value.strip().lower()
+        if value in ("1", "true", "yes", "on"):
+            return True
+        if value in ("0", "false", "no", "off"):
+            return False
+    return bool(value)
+
+
 def derive_collection_title(subpath: str) -> str:
     if not subpath:
         return "King Midis"
@@ -258,6 +271,7 @@ def build_meta_context(midi_path: Path, meta_data: dict | None, rel_path: str) -
         "attachments": attachments,
         "genre": genre_value,
         "tags": ", ".join(tags_list),
+        "ai_scraped": "1" if ai_flag_value(meta_data) else "",
     }
 
     preset = INSTRUMENT_LOOKUP.get(
@@ -936,6 +950,8 @@ def update_entry():
         meta_payload["tags"] = tags_list
     if attachments_value:
         meta_payload["attachments"] = attachments_value
+    if metadata.get("ai_scraped"):
+        meta_payload[AI_FLAG_FIELD] = True
 
     meta_path = meta_path_for_write(updated_path)
     meta_path.write_text(
@@ -1017,32 +1033,10 @@ def ai_suggest_metadata():
         "folder": midi_path.parent.name,
         "metadata": working_meta,
     }
-    prompt = (
-        "You are an assistant that cleans up classical music metadata. "
-        "Given the JSON payload below, return improved values as JSON with the keys "
-        "`name` (title string), `composer` (string), `bpm` (number), "
-        "`genre` (string), and `tags` (array of 3-6 short descriptive strings). "
-        "Only respond with valid JSON and do not include prose. "
-        "If the metadata already includes a composer, keep that value unless you are certain it should change.\n\n"
-        f"Input:\n{json.dumps(context_blob, ensure_ascii=False, indent=2)}"
-    )
 
-    try:
-        completion = openai_client.chat.completions.create(
-            model=OPENAI_MODEL,
-            messages=[
-                {
-                    "role": "system",
-                    "content": "You refine music metadata for a MIDI library.",
-                },
-                {"role": "user", "content": prompt},
-            ],
-        )
-        ai_text = completion.choices[0].message.content.strip()
-        suggestion = json.loads(ai_text)
-    except Exception as exc:
-        app.logger.exception("AI suggestion failed")
-        return jsonify({"error": f"AI request failed: {exc}"}), 500
+    suggestion, error = request_ai_suggestion(context_blob)
+    if error:
+        return jsonify({"error": error}), 500
 
     bpm_value = suggestion.get("bpm")
     try:
@@ -1066,6 +1060,7 @@ def ai_suggest_metadata():
         "bpm": bpm_value if (bpm_value and bpm_value > 0) else None,
         "genre": suggestion.get("genre", ""),
         "tags": tags_list,
+        "ai_scraped": True,
     }
 
     return jsonify({"success": True, "suggestion": result})
@@ -1077,6 +1072,149 @@ def admin_home():
         return redirect(url_for("browse"))
 
     return render_template("admin_index.html", admin_mode=ADMIN_MODE)
+
+
+def list_top_level_folders():
+    folders = []
+    for child in sorted(BASE_DIR.iterdir(), key=lambda p: p.name.lower()):
+        if child.is_dir():
+            folders.append(child)
+    return folders
+
+
+def iter_midi_files(folder: Path):
+    for path in sorted(folder.glob("*.mid")):
+        if path.is_file():
+            yield path
+    for path in sorted(folder.glob("*.midi")):
+        if path.is_file():
+            yield path
+
+
+def mass_ai_process_folder(folder: Path, log_lines: list[str]) -> int:
+    processed = 0
+    for midi in iter_midi_files(folder):
+        meta = ensure_meta(midi)
+        if ai_flag_value(meta):
+            log_lines.append(f"Skipping {midi.name}: already AI processed.")
+            continue
+        try:
+            rel_path = str(midi.relative_to(BASE_DIR))
+        except ValueError:
+            rel_path = midi.name
+        payload = {
+            "rel_path": rel_path,
+            "metadata": {
+                "name": meta.get("name", ""),
+                "composer": meta.get("composer", ""),
+                "contributor": meta.get("contributor", ""),
+                "modified_by": meta.get("modified_by", ""),
+                "source": meta.get("source", ""),
+                "license": meta.get("license", ""),
+                "instrument": meta.get("instrument", ""),
+                "attachments": ", ".join(normalize_attachment_list(meta.get("attachments"))),
+                "bpm": meta.get("bpm", ""),
+                "genre": meta.get("genre", ""),
+                "tags": ", ".join(normalize_attachment_list(meta.get("tags"))),
+            },
+        }
+        log_lines.append(f"Running AI for {midi.name}")
+        suggestion = request_ai_suggestion(payload)
+        if suggestion:
+            updated = dict(meta)
+            updated["name"] = suggestion["name"] or updated.get("name", "")
+            updated["composer"] = suggestion["composer"] or updated.get("composer", "")
+            if suggestion["bpm"]:
+                updated["bpm"] = suggestion["bpm"]
+            if suggestion["genre"]:
+                updated["genre"] = suggestion["genre"]
+            if suggestion["tags"]:
+                updated["tags"] = suggestion["tags"]
+            updated[AI_FLAG_FIELD] = True
+            meta_path = meta_path_for_write(midi)
+            meta_path.write_text(yaml.safe_dump(updated, allow_unicode=True, sort_keys=False))
+            processed += 1
+            log_lines.append(f"Updated {midi.name}")
+    return processed
+
+
+def cleanup_pdfs_in_folder(folder: Path) -> int:
+    removed = 0
+    for pdf in folder.glob("*.pdf"):
+        if not pdf.is_file():
+            continue
+        pdf.unlink(missing_ok=True)
+        removed += 1
+    for midi in iter_midi_files(folder):
+        meta = load_meta(midi)
+        if not meta:
+            continue
+        meta["attachments"] = []
+        meta_path = meta_path_for_write(midi)
+        meta_path.write_text(yaml.safe_dump(meta, allow_unicode=True, sort_keys=False))
+    return removed
+
+
+@app.route("/admin/mass-ai", methods=["GET", "POST"])
+def admin_mass_ai():
+    if not ADMIN_MODE or not AI_ENABLED:
+        return redirect(url_for("browse"))
+
+    status_message = None
+    log_lines: list[str] = []
+    folders = list_top_level_folders()
+
+    if request.method == "POST":
+        folder_name = request.form.get("folder")
+        target_folder = BASE_DIR / folder_name
+        if not folder_name or not target_folder.exists() or not target_folder.is_dir():
+            status_message = "Invalid folder."
+        else:
+            try:
+                processed = mass_ai_process_folder(target_folder, log_lines)
+                status_message = f"Processed {processed} files in {folder_name}."
+            except Exception as exc:
+                status_message = f"Error: {exc}"
+
+    folder_entries = [{"name": f.name} for f in folders]
+    return render_template(
+        "admin_mass_ai.html",
+        admin_mode=ADMIN_MODE,
+        folders=folder_entries,
+        status=status_message,
+        logs=log_lines,
+    )
+
+
+@app.route("/admin/pdf-cleanup", methods=["GET", "POST"])
+def admin_pdf_cleanup():
+    if not ADMIN_MODE:
+        return redirect(url_for("browse"))
+
+    status_message = None
+    folders = list_top_level_folders()
+    selected = None
+
+    if request.method == "POST":
+        folder_name = request.form.get("folder")
+        selected = folder_name
+        target_folder = BASE_DIR / folder_name
+        if not folder_name or not target_folder.exists() or not target_folder.is_dir():
+            status_message = "Invalid folder."
+        else:
+            try:
+                removed = cleanup_pdfs_in_folder(target_folder)
+                status_message = f"Removed {removed} PDFs in {folder_name}."
+            except Exception as exc:
+                status_message = f"Error: {exc}"
+
+    return render_template(
+        "admin_pdf_cleanup.html",
+        admin_mode=ADMIN_MODE,
+        folders=[{"name": f.name} for f in folders],
+        selected=selected,
+        status=status_message,
+    )
 
 
 @app.route("/admin/scrubber", methods=["GET", "POST"])
