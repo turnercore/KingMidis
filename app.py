@@ -44,6 +44,7 @@ MUTOPIA_SEARCH_ENDPOINT = "https://www.mutopiaproject.org/cgibin/make-table.cgi"
 SCRUB_SOURCES = [
     {"id": "mutopia", "label": "Mutopia Project"},
 ]
+SCRUB_CONCURRENCY = max(1, int(os.environ.get("SCRUB_THREADS", "3")))
 REQUEST_HEADERS = {"User-Agent": "KingMidis/1.0"}
 OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
 OPENAI_MODEL = os.environ.get("OPENAI_MODEL", "gpt-5-nano")
@@ -59,11 +60,10 @@ mass_ai_state = {
 }
 scrub_state = {
     "lock": threading.Lock(),
-    "running": False,
+    "jobs": [],
     "log": [],
     "summary": [],
     "error": None,
-    "cancel": None,
 }
 
 
@@ -1772,18 +1772,12 @@ def scrub_log_append(message: str):
 
 def start_scrub_thread(term: str, download_pdf: bool, test_mode: bool, source: str):
     with scrub_state["lock"]:
-        if scrub_state["running"]:
-            return False, "Scrub already running."
+        if len(scrub_state["jobs"]) >= SCRUB_CONCURRENCY:
+            return False, "Maximum concurrent scrubs running."
         cancel_event = threading.Event()
-        scrub_state.update(
-            {
-                "running": True,
-                "log": [f"Starting search for '{term}'"],
-                "summary": [],
-                "error": None,
-                "cancel": cancel_event,
-            }
-        )
+        scrub_state["jobs"].append({"term": term, "cancel": cancel_event})
+        scrub_state["log"].append(f"Starting search for '{term}'")
+        scrub_state["error"] = None
 
     def log_fn(message: str):
         scrub_log_append(message)
@@ -1799,15 +1793,20 @@ def start_scrub_thread(term: str, download_pdf: bool, test_mode: bool, source: s
                 cancel_event=cancel_event,
             )
             with scrub_state["lock"]:
-                scrub_state["summary"] = summary
-                scrub_state["running"] = False
-                scrub_state["cancel"] = None
+                scrub_state["summary"].append({"term": term, "result": summary})
+                scrub_state["jobs"] = [
+                    job for job in scrub_state["jobs"] if job["cancel"] is not cancel_event
+                ]
         except Exception as exc:
             scrub_log_append(f"Error: {exc}")
             with scrub_state["lock"]:
                 scrub_state["error"] = str(exc)
-                scrub_state["running"] = False
-                scrub_state["cancel"] = None
+                scrub_state["jobs"] = [
+                    job for job in scrub_state["jobs"] if job["cancel"] is not cancel_event
+                ]
+            return
+        finally:
+            scrub_log_append(f"Finished job for '{term}'")
 
     thread = threading.Thread(target=worker, daemon=True)
     thread.start()
@@ -1817,11 +1816,12 @@ def start_scrub_thread(term: str, download_pdf: bool, test_mode: bool, source: s
 def get_scrub_status():
     with scrub_state["lock"]:
         return {
-            "running": scrub_state["running"],
+            "running": len(scrub_state["jobs"]) > 0,
             "log": list(scrub_state["log"]),
             "summary": list(scrub_state["summary"]),
             "error": scrub_state["error"],
-            "can_cancel": bool(scrub_state.get("cancel")),
+            "can_cancel": bool(scrub_state["jobs"]),
+            "active_jobs": [job["term"] for job in scrub_state["jobs"]],
         }
 
 
@@ -2003,10 +2003,11 @@ def admin_scrubber_status():
 def admin_scrubber_cancel():
     require_admin_access()
     with scrub_state["lock"]:
-        cancel_event = scrub_state.get("cancel")
-        if not scrub_state["running"] or not cancel_event:
+        if not scrub_state["jobs"]:
             return jsonify({"error": "No job running."}), 400
-        cancel_event.set()
+        for job in scrub_state["jobs"]:
+            job["cancel"].set()
+        scrub_state["jobs"] = []
         scrub_state["log"].append("Cancelling…")
     return jsonify({"success": True})
 
