@@ -45,6 +45,7 @@ SCRUB_SOURCES = [
     {"id": "mutopia", "label": "Mutopia Project"},
 ]
 SCRUB_CONCURRENCY = max(1, int(os.environ.get("SCRUB_THREADS", "3")))
+AI_CONCURRENCY = max(1, int(os.environ.get("AI_THREADS", "2")))
 REQUEST_HEADERS = {"User-Agent": "KingMidis/1.0"}
 OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
 OPENAI_MODEL = os.environ.get("OPENAI_MODEL", "gpt-5-nano")
@@ -52,11 +53,10 @@ openai_client = OpenAI(api_key=OPENAI_API_KEY) if OPENAI_API_KEY else None
 AI_ENABLED = openai_client is not None
 mass_ai_state = {
     "lock": threading.Lock(),
-    "running": False,
+    "jobs": [],
     "folder": None,
     "log": [],
     "cancel": None,
-    "thread": None,
 }
 scrub_state = {
     "lock": threading.Lock(),
@@ -1729,36 +1729,31 @@ def request_ai_suggestion(context_blob: dict):
 
 def start_mass_ai_thread(folder: Path):
     with mass_ai_state["lock"]:
-        if mass_ai_state["running"]:
-            return False, "Mass AI already running."
-        log = [f"Starting AI for {folder.name}"]
+        if len(mass_ai_state["jobs"]) >= AI_CONCURRENCY:
+            return False, "Maximum concurrent AI jobs running."
         cancel_event = threading.Event()
+        log = [f"Starting AI for {folder.name}"]
+        job = {"folder": folder.name, "cancel": cancel_event, "log": log}
+        mass_ai_state["jobs"].append(job)
+        mass_ai_state["log"].append(log[0])
 
-        def worker():
-            try:
-                mass_ai_process_folder(folder, log, cancel_event)
-            except Exception as exc:
-                log.append(f"Error: {exc}")
-            finally:
-                cancel_event.set()
-                with mass_ai_state["lock"]:
-                    mass_ai_state.update(
-                        {"running": False, "folder": None,
-                            "cancel": None, "thread": None}
-                    )
+    def worker(job_entry):
+        try:
+            mass_ai_process_folder(
+                folder, job_entry["log"], cancel_event)
+        except Exception as exc:
+            job_entry["log"].append(f"Error: {exc}")
+        finally:
+            cancel_event.set()
+            with mass_ai_state["lock"]:
+                mass_ai_state["jobs"] = [
+                    item for item in mass_ai_state["jobs"] if item is not job_entry
+                ]
+                mass_ai_state["log"].extend(job_entry["log"])
 
-        thread = threading.Thread(target=worker, daemon=True)
-        mass_ai_state.update(
-            {
-                "running": True,
-                "folder": folder.name,
-                "log": log,
-                "cancel": cancel_event,
-                "thread": thread,
-            }
-        )
-        thread.start()
-        return True, None
+    thread = threading.Thread(target=worker, args=(job,), daemon=True)
+    thread.start()
+    return True, None
 
 
 def scrub_log_append(message: str):
@@ -1827,18 +1822,20 @@ def get_scrub_status():
 
 def cancel_mass_ai_thread():
     with mass_ai_state["lock"]:
-        if not mass_ai_state["running"] or not mass_ai_state["cancel"]:
+        if not mass_ai_state["jobs"]:
             return False, "No job running."
-        mass_ai_state["log"].append("Cancelling…")
-        mass_ai_state["cancel"].set()
+        mass_ai_state["log"].append("Cancelling all AI jobs…")
+        for job in mass_ai_state["jobs"]:
+            job["cancel"].set()
+        mass_ai_state["jobs"] = []
         return True, None
 
 
 def get_mass_ai_status():
     with mass_ai_state["lock"]:
         return {
-            "running": mass_ai_state["running"],
-            "folder": mass_ai_state["folder"],
+            "running": len(mass_ai_state["jobs"]) > 0,
+            "folders": [job["folder"] for job in mass_ai_state["jobs"]],
             "log": list(mass_ai_state["log"]),
         }
 
