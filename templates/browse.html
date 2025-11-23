@@ -47,7 +47,16 @@
                 </div>
 
                 <div class="header-actions">
-                    {% if admin_mode %}
+                    {% if admin_enabled %}
+                    <button
+                        type="button"
+                        id="adminToggle"
+                        class="admin-unlock-btn"
+                        data-unlocked="{{ 'true' if admin_mode else 'false' }}"
+                    >
+                        {% if admin_mode %}🔓{% else %}🔒{% endif %}
+                    </button>
+                    {% endif %} {% if admin_mode %}
                     <a href="{{ url_for('admin_home') }}" class="admin-link">Admin</a>
                     {% endif %}
                     <button
@@ -88,9 +97,11 @@
                         <div class="file-content">
                             <div class="file-text">
                                 <span class="file-label">
-                                    {{ e.instrument_icon }} {{ e.display_name }}
-                                    {% if e.meta.part_display %}
-                                    <small class="file-part-label">· {{ e.meta.part_display }}</small>
+                                    {{ e.instrument_icon }} {{ e.display_name }} {% if
+                                    e.meta.part_display %}
+                                    <small class="file-part-label"
+                                        >· {{ e.meta.part_display }}</small
+                                    >
                                     {% endif %}
                                 </span>
 
@@ -130,7 +141,15 @@
                                             {% endif %} {% if e.meta.source %}
                                             <div>
                                                 <p class="meta-label">Source</p>
-                                                <p>{{ e.meta.source }}</p>
+                                                <p>
+                                                    {% if e.meta.source_url %}
+                                                    <a href="{{ e.meta.source_url }}" target="_blank" rel="noopener">
+                                                        {{ e.meta.source or "Source" }}
+                                                    </a>
+                                                    {% else %}
+                                                    {{ e.meta.source }}
+                                                    {% endif %}
+                                                </p>
                                             </div>
                                             {% endif %} {% if e.meta.instruments %}
                                             <div>
@@ -210,7 +229,7 @@
                                     class="icon-btn edit-btn"
                                     data-rel-path="{{ e.rel_path }}"
                                     data-slug="{{ e.slug }}"
-                                    data-meta='{{ e.meta.form_defaults | tojson | safe }}'
+                                    data-meta="{{ e.meta.form_defaults | tojson | safe }}"
                                     data-instrument="{{ e.instrument_id }}"
                                 >
                                     ✏️ <span class="sr-only">Edit entry</span>
@@ -235,24 +254,28 @@
                 <div class="player-progress">
                     <span id="currentTime">0:00</span>
 
-                    <input
-                        type="range"
-                        id="progressSlider"
-                        min="0"
-                        max="1000"
-                        value="0"
-                        disabled
-                    />
+                    <input type="range" id="progressSlider" min="0" max="1000" value="0" disabled />
 
                     <span id="totalTime">0:00</span>
                 </div>
 
                 <div class="player-instruments" role="group" aria-label="Instrument presets">
-                    {% set primary_presets = instrument_presets[:3] %} {% set extra_presets =
-                    instrument_presets[3:] %} {% for preset in primary_presets %}
+                    {% set primary_presets = instrument_presets[:3] %}
+                    {% set extra_presets = instrument_presets[3:] %}
+                    {% set dynamic_preset = primary_presets[0] %}
                     <button
                         type="button"
-                        class="instrument-btn {% if loop.first %}active{% endif %}"
+                        class="instrument-btn active"
+                        data-instrument="{{ dynamic_preset.id }}"
+                        data-slot="dynamic"
+                        title="{{ dynamic_preset.label }}"
+                    >
+                        {{ dynamic_preset.emoji }}
+                    </button>
+                    {% for preset in primary_presets[1:] %}
+                    <button
+                        type="button"
+                        class="instrument-btn"
                         data-instrument="{{ preset.id }}"
                         title="{{ preset.label }}"
                     >
@@ -431,6 +454,9 @@
         <!-- @tonejs/midi UMD build that exposes global `Midi` -->
 <script src="https://unpkg.com/@tonejs/midi"></script>
 
+        <script>
+            window.kmInstrumentPresets = {{ instrument_presets | tojson | safe }};
+        </script>
         <!-- Your player logic (depends on `Tone` and `Midi` already being loaded) -->
 <script src="{{ url_for('static', filename='js/logo.js') }}"></script>
 <script src="{{ url_for('static', filename='js/player.js') }}"></script>
@@ -471,6 +497,75 @@
                     const activeTheme = root.getAttribute("data-theme") || "dark";
                     const nextTheme = activeTheme === "dark" ? "light" : "dark";
                     setTheme(nextTheme);
+                });
+
+                const adminToggle = document.getElementById("adminToggle");
+                if (adminToggle) {
+                    const handleError = (message) => {
+                        alert(message || "Unable to update admin state.");
+                    };
+
+                    adminToggle.addEventListener("click", async () => {
+                        const unlocked = adminToggle.dataset.unlocked === "true";
+                        if (unlocked) {
+                            if (!confirm("Disable admin controls for this browser?")) {
+                                return;
+                            }
+                            try {
+                                const resp = await fetch("/admin/lock", {
+                                    method: "POST",
+                                    headers: { "Content-Type": "application/json" },
+                                    credentials: "same-origin",
+                                });
+                                if (!resp.ok) {
+                                    const payload = await resp.json().catch(() => ({}));
+                                    handleError(payload.error);
+                                    return;
+                                }
+                                window.location.reload();
+                            } catch (err) {
+                                handleError(err?.message);
+                            }
+                            return;
+                        }
+
+                        const password = window.prompt("Enter the admin password");
+                        if (!password) return;
+                        try {
+                            const resp = await fetch("/admin/unlock", {
+                                method: "POST",
+                                headers: { "Content-Type": "application/json" },
+                                credentials: "same-origin",
+                                body: JSON.stringify({ password }),
+                            });
+                            if (!resp.ok) {
+                                const payload = await resp.json().catch(() => ({}));
+                                handleError(payload.error || "Invalid password.");
+                                return;
+                            }
+                            window.location.reload();
+                        } catch (err) {
+                            handleError(err?.message);
+                        }
+                    });
+                }
+
+                const folderLinks = document.querySelectorAll(
+                    ".file-list li.dir a[role='button']"
+                );
+                folderLinks.forEach((link) => {
+                    link.addEventListener("click", () => {
+                        if (link.dataset.loading === "true") return;
+                        link.dataset.loading = "true";
+                        link.classList.add("is-loading");
+                        if (!link.dataset.originalText) {
+                            link.dataset.originalText = link.textContent;
+                        }
+                        link.textContent = "Opening…";
+                        if (typeof window.kmLogoSetThinking === "function") {
+                            window.kmLogoSetThinking(true);
+                        }
+                    });
                 });
             });
         </script>

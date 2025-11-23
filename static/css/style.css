@@ -733,12 +733,6 @@ summary::-webkit-details-marker {
   margin-bottom: 1rem;
 }
 
-.admin-header-actions {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-}
-
 .admin-close,
 .admin-save,
 .admin-ai {
@@ -901,17 +895,6 @@ summary::-webkit-details-marker {
   }
 }
 
-.theme-toggle {
-  width: 48px;
-  height: 48px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 50%;
-  font-size: 1.4rem;
-  padding: 0;
-}
-
 :root[data-theme="dark"] .theme-toggle {
   background: rgba(0, 0, 0, 0.5);
 }
@@ -920,13 +903,21 @@ summary::-webkit-details-marker {
   background: rgba(255, 255, 255, 0.8);
 }
 
-.header-actions {
-  display: flex;
+.header-actions,
+.admin-header-actions {
+  padding-top: 2rem;
   align-items: center;
   gap: 0.5rem;
 }
 
-.admin-link {
+.admin-unlock-btn:hover {
+  border-color: var(--accent);
+  background: rgba(123, 126, 251, 0.15);
+}
+
+.admin-link,
+.admin-unlock-btn,
+.theme-toggle {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -937,6 +928,22 @@ summary::-webkit-details-marker {
   background: rgba(255, 255, 255, 0.04);
   text-decoration: none;
   padding: 0 0.85rem;
+}
+
+/* keep your special styling for theme button */
+.theme-toggle {
+  width: 40px;
+  /* match height if you want a perfect circle */
+  padding: 0;
+}
+
+/* keep your existing colors/borders/hover states: */
+.admin-unlock-btn {
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  background: rgba(255, 255, 255, 0.05);
+  color: inherit;
+  cursor: pointer;
+  transition: border 0.2s ease, background 0.2s ease;
 }
 
 .admin-link:hover {

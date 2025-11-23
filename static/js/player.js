@@ -18,8 +18,16 @@ const SLIDER_MAX = progressSlider ? Number(progressSlider.max) || 1000 : 1000;
 const volumeSlider = document.getElementById("volumeSlider");
 const volumeLabel = document.getElementById("volumeLabel");
 const instrumentButtons = document.querySelectorAll(".instrument-btn[data-instrument]");
+const dynamicInstrumentBtn = document.querySelector(".instrument-btn[data-slot='dynamic']");
 const moreToggleBtn = document.querySelector(".instrument-btn.more-toggle");
 const instrumentDropdown = document.querySelector(".instrument-dropdown");
+const instrumentPresets = Array.isArray(window.kmInstrumentPresets) ? window.kmInstrumentPresets : [];
+const instrumentLookupMap = instrumentPresets.reduce((acc, preset) => {
+    if (preset && preset.id) {
+        acc[preset.id] = preset;
+    }
+    return acc;
+}, {});
 const VOLUME_STORAGE_KEY = "km-volume";
 const INSTRUMENT_STORAGE_KEY = "km-instrument";
 const DEFAULT_VOLUME = 80;
@@ -65,6 +73,16 @@ const INSTRUMENT_PRESETS = {
             new Tone.PolySynth(Tone.PluckSynth, {
                 dampening: 3200,
                 resonance: 0.8,
+            }).toDestination(),
+    },
+    accordion: {
+        label: "Accordion",
+        create: () =>
+            new Tone.PolySynth(Tone.Synth, {
+                oscillator: { type: "square" },
+                envelope: { attack: 0.05, decay: 0.4, sustain: 0.6, release: 1.5 },
+                filter: { type: "lowpass", frequency: 4500 },
+                detune: -5,
             }).toDestination(),
     },
     brass: {
@@ -330,10 +348,25 @@ function createSynthForPreset(presetId) {
     return preset.create();
 }
 
+function updateDynamicInstrumentButton(presetId) {
+    if (!dynamicInstrumentBtn) return;
+    const preset = instrumentLookupMap[presetId];
+    if (preset) {
+        dynamicInstrumentBtn.textContent = preset.emoji || presetId;
+        dynamicInstrumentBtn.title = preset.label || presetId;
+    } else {
+        dynamicInstrumentBtn.textContent = "🎵";
+        dynamicInstrumentBtn.title = presetId;
+    }
+    dynamicInstrumentBtn.dataset.instrument = presetId;
+}
+
 function applyInstrumentSelection(presetId, { persist = true } = {}) {
     if (!INSTRUMENT_PRESETS[presetId]) {
         presetId = "piano";
     }
+
+    updateDynamicInstrumentButton(presetId);
 
     if (currentInstrumentId === presetId) return;
 
@@ -357,6 +390,7 @@ function initInstrumentControls() {
     let closeDropdown = () => {};
     const initial = readStoredInstrument();
     currentInstrumentId = initial;
+    updateDynamicInstrumentButton(initial);
     instrumentButtons.forEach((btn) => {
         btn.classList.toggle("active", btn.dataset.instrument === initial);
         btn.addEventListener("click", () => {
@@ -462,16 +496,37 @@ function initAdminEditor() {
         setAiState(false);
     };
 
-    const showModal = (button) => {
-        const metaDefaults = (() => {
-            try {
-                return button.dataset.meta ? JSON.parse(button.dataset.meta) : {};
-            } catch (error) {
-                console.warn("Failed to parse meta defaults", error);
-                return {};
-            }
-        })();
+    const parseButtonMeta = (button) => {
+        try {
+            return button.dataset.meta ? JSON.parse(button.dataset.meta) : {};
+        } catch (error) {
+            console.warn("Failed to parse meta defaults", error);
+            return {};
+        }
+    };
 
+    const fetchMetaDefaults = async (button) => {
+        const relPath = button.dataset.relPath || "";
+        let metaDefaults = parseButtonMeta(button);
+        if (!relPath) return metaDefaults;
+        try {
+            const response = await fetch(
+                `/api/entry/meta?rel_path=${encodeURIComponent(relPath)}`,
+                { credentials: "same-origin" }
+            );
+            if (response.ok) {
+                const payload = await response.json();
+                if (payload && payload.meta) {
+                    metaDefaults = payload.meta;
+                }
+            }
+        } catch (error) {
+            console.warn("Meta fetch failed", error);
+        }
+        return metaDefaults;
+    };
+
+    const applyMetaDefaults = (button, metaDefaults) => {
         relInput.value = button.dataset.relPath || "";
         slugInput.value = button.dataset.slug || "";
         fields.name.value = metaDefaults.name || "";
@@ -480,15 +535,32 @@ function initAdminEditor() {
         fields.modified_by.value = metaDefaults.modified_by || "";
         fields.source.value = metaDefaults.source || "";
         fields.license.value = metaDefaults.license || "Public Domain";
-        fields.instrument.value = button.dataset.instrument || metaDefaults.instrument || "piano";
+        fields.instrument.value =
+            button.dataset.instrument || metaDefaults.instrument || "piano";
         fields.bpm.value = metaDefaults.bpm || "";
-        fields.attachments.value = (metaDefaults.attachments || []).join(", ");
-        fields.genre.value = metaDefaults.genre || "";
-        fields.tags.value = metaDefaults.tags || "";
 
-        statusEl.textContent = "";
+        const attachmentsValue = metaDefaults.attachments;
+        if (Array.isArray(attachmentsValue)) {
+            fields.attachments.value = attachmentsValue.join(", ");
+        } else {
+            fields.attachments.value = attachmentsValue || "";
+        }
+
+        fields.genre.value = metaDefaults.genre || "";
+        if (Array.isArray(metaDefaults.tags)) {
+            fields.tags.value = metaDefaults.tags.join(", ");
+        } else {
+            fields.tags.value = metaDefaults.tags || "";
+        }
+    };
+
+    const showModal = async (button) => {
+        statusEl.textContent = "Loading metadata…";
         setAiState(false);
         modal.classList.remove("hidden");
+        const metaDefaults = await fetchMetaDefaults(button);
+        applyMetaDefaults(button, metaDefaults);
+        statusEl.textContent = "";
     };
 
     document.querySelectorAll(".edit-btn").forEach((btn) => {

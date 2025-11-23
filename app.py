@@ -1,4 +1,5 @@
-from flask import Flask, render_template, send_from_directory, abort, request, jsonify, redirect, url_for
+from flask import Flask, render_template, send_from_directory, abort, request, jsonify, redirect, url_for, session
+import hmac
 from pathlib import Path
 from collections.abc import Callable
 from openai import OpenAI
@@ -12,12 +13,27 @@ import yaml
 import requests
 from urllib.parse import urljoin
 from bs4 import BeautifulSoup
+import secrets
 
 app = Flask(__name__)
 
 # Base directory for MIDI files inside the container
 BASE_DIR = Path(os.environ.get("MIDI_ROOT", "/midis")).resolve()
 ADMIN_MODE = os.environ.get("ADMIN_MODE", "").lower() in ("1", "true", "yes")
+ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD")
+SECRET_KEY = os.environ.get("SECRET_KEY")
+if not SECRET_KEY:
+    SECRET_KEY = ADMIN_PASSWORD or secrets.token_hex(32)
+app.secret_key = SECRET_KEY
+ADMIN_UNLOCK_TOKEN = (
+    hmac.new(
+        SECRET_KEY.encode("utf-8"),
+        (ADMIN_PASSWORD or "").encode("utf-8"),
+        "sha256",
+    ).hexdigest()
+    if ADMIN_PASSWORD
+    else None
+)
 
 META_SUFFIXES = [".meta", ".yml", ".yaml"]
 DEFAULT_META_SUFFIX = ".yml"
@@ -51,6 +67,19 @@ scrub_state = {
 }
 
 
+def has_admin_access() -> bool:
+    return (
+        ADMIN_MODE
+        and ADMIN_UNLOCK_TOKEN is not None
+        and session.get("admin_token") == ADMIN_UNLOCK_TOKEN
+    )
+
+
+def require_admin_access():
+    if not has_admin_access():
+        abort(403)
+
+
 def human_readable_bytes(num: int) -> str:
     step = 1024.0
     for unit in ["bytes", "KB", "MB", "GB", "TB"]:
@@ -68,6 +97,7 @@ INSTRUMENT_PRESETS = [
     {"id": "strings", "label": "Strings", "emoji": "🎻"},
     {"id": "guitar", "label": "Guitar", "emoji": "🎸"},
     {"id": "harp", "label": "Harp", "emoji": "🪕"},
+    {"id": "accordion", "label": "Accordion", "emoji": "🪗"},
     {"id": "brass", "label": "Brass", "emoji": "🎺"},
     {"id": "voice", "label": "Choir/Voice", "emoji": "🎤"},
     {"id": "organ", "label": "Organ", "emoji": "⛪"},
@@ -80,6 +110,7 @@ INSTRUMENT_LOOKUP = {preset["id"]: preset for preset in INSTRUMENT_PRESETS}
 INSTRUMENT_KEYWORDS = [
     (["guitar"], "guitar"),
     (["harp"], "harp"),
+    (["accordion"], "accordion"),
     (["choir", "voice", "vocal", "singer", "soprano", "alto", "tenor", "bass"], "voice"),
     (["violin", "viola", "cello", "string", "orchestra", "ensemble"], "strings"),
     (["flute", "oboe", "clarinet", "sax", "woodwind", "recorder"], "woodwind"),
@@ -415,6 +446,7 @@ def build_meta_context(
     contributor = meta_data.get("contributor") or meta_data.get("editor")
     modified_by = meta_data.get("modified_by")
     source = meta_data.get("source")
+    source_url = meta_data.get("source_url")
     instrument_choice = normalize_instrument_choice(
         meta_data.get("instrument") or meta_data.get("instruments"))
     preset_lookup = {preset["id"]: preset for preset in INSTRUMENT_PRESETS}
@@ -460,6 +492,7 @@ def build_meta_context(
         "contributor": contributor or "",
         "modified_by": meta_data.get("modified_by", ""),
         "source": meta_data.get("source", ""),
+        "source_url": source_url or "",
         "license": meta_data.get("license") or meta_data.get("liscense") or "Public Domain",
         "instrument": instrument_choice,
         "bpm": meta_data.get("bpm") or meta_data.get("tempo") or "",
@@ -483,6 +516,7 @@ def build_meta_context(
         "contributor": contributor,
         "modified_by": modified_by,
         "source": source,
+        "source_url": source_url,
         "instrument": instrument_choice,
         "license": license_value,
         "attribution_text": "\n".join(lines),
@@ -662,11 +696,12 @@ def update_metadata_for_path(midi_path: Path, listing: dict, part_label: str | N
         "instrumentation": listing.get("instrumentation"),
         "notes": listing.get("notes"),
         "contributor": listing.get("contributor") or listing.get("editor"),
+        "source_url": listing.get("source_url"),
     }
 
     changed = False
     for key, value in updates.items():
-        if key in ("license", "contributor"):
+        if key in ("license", "contributor", "source", "source_url"):
             if value and merged.get(key) != value:
                 merged[key] = value
                 changed = True
@@ -730,6 +765,11 @@ def parse_mutopia_table(table) -> dict | None:
     if license_cell:
         link = license_cell.find("a")
         license_text = link.get_text(strip=True) if link else cell_text(2, 1)
+    info_cell = cell(2, 2)
+    info_link = info_cell.find("a") if info_cell else None
+    source_url = None
+    if info_link and info_link.get("href"):
+        source_url = urljoin(MUTOPIA_SEARCH_ENDPOINT, info_link["href"])
 
     midi_cell = cell(3, 1)
     midi_url = None
@@ -782,6 +822,7 @@ def parse_mutopia_table(table) -> dict | None:
         "pdf_zip_url": pdf_zip_url,
         "instrument_id": instrument_id,
         "contributor": contributor_text,
+        "source_url": source_url,
     }
 
 
@@ -1137,7 +1178,8 @@ def browse(subpath: str):
         entries=entries,
         subpath=subpath,
         parent_rel=parent_rel,
-        admin_mode=ADMIN_MODE,
+        admin_mode=has_admin_access(),
+        admin_enabled=ADMIN_MODE and bool(ADMIN_PASSWORD),
         instrument_presets=INSTRUMENT_PRESETS,
         openai_enabled=AI_ENABLED,
         collection_title=derive_collection_title(subpath),
@@ -1166,8 +1208,7 @@ def attachment_file(subpath: str):
 
 @app.post("/api/entry/update")
 def update_entry():
-    if not ADMIN_MODE:
-        abort(403)
+    require_admin_access()
 
     payload = request.get_json(silent=True) or {}
     rel_path = payload.get("rel_path")
@@ -1277,8 +1318,7 @@ def update_entry():
 
 @app.post("/api/entry/delete")
 def delete_entry():
-    if not ADMIN_MODE:
-        abort(403)
+    require_admin_access()
 
     payload = request.get_json(silent=True) or {}
     rel_path = payload.get("rel_path")
@@ -1316,8 +1356,7 @@ def delete_entry():
 
 @app.post("/api/entry/ai-suggest")
 def ai_suggest_metadata():
-    if not ADMIN_MODE:
-        abort(403)
+    require_admin_access()
     if not AI_ENABLED or not openai_client:
         return jsonify({"error": "AI assistance is not configured."}), 400
 
@@ -1375,13 +1414,51 @@ def ai_suggest_metadata():
     return jsonify({"success": True, "suggestion": result})
 
 
+@app.get("/api/entry/meta")
+def fetch_entry_meta():
+    require_admin_access()
+    rel_path = request.args.get("rel_path")
+    if not rel_path:
+        return jsonify({"error": "Missing rel_path"}), 400
+    midi_path = get_safe_path(rel_path)
+    if not is_midi_file(midi_path):
+        abort(404)
+    meta_data = load_meta(midi_path)
+    context = build_meta_context(midi_path, meta_data, rel_path)
+    return jsonify({"success": True, "meta": context["form_defaults"]})
+
+
+@app.post("/admin/unlock")
+def admin_unlock():
+    if not ADMIN_MODE:
+        abort(404)
+    if not ADMIN_PASSWORD or ADMIN_UNLOCK_TOKEN is None:
+        return jsonify({"error": "Admin password is not configured."}), 400
+    payload = request.get_json(silent=True) or {}
+    password = payload.get("password", "")
+    if not password:
+        return jsonify({"error": "Password required."}), 400
+    if not hmac.compare_digest(password, ADMIN_PASSWORD):
+        return jsonify({"error": "Invalid password."}), 403
+    session["admin_token"] = ADMIN_UNLOCK_TOKEN
+    return jsonify({"success": True})
+
+
+@app.post("/admin/lock")
+def admin_lock():
+    if not ADMIN_MODE:
+        abort(404)
+    session.pop("admin_token", None)
+    return jsonify({"success": True})
+
+
 @app.route("/admin")
 def admin_home():
-    if not ADMIN_MODE:
+    if not has_admin_access():
         return redirect(url_for("browse"))
 
     stats = compute_library_stats()
-    return render_template("admin_index.html", admin_mode=ADMIN_MODE, stats=stats)
+    return render_template("admin_index.html", admin_mode=True, admin_enabled=ADMIN_MODE, stats=stats)
 
 
 def list_top_level_folders():
@@ -1775,7 +1852,7 @@ def get_mass_ai_status():
 
 @app.route("/admin/mass-ai", methods=["GET", "POST"])
 def admin_mass_ai():
-    if not ADMIN_MODE or not AI_ENABLED:
+    if not has_admin_access() or not AI_ENABLED:
         return redirect(url_for("browse"))
 
     folders = [{"name": f.name} for f in list_top_level_folders()]
@@ -1783,7 +1860,8 @@ def admin_mass_ai():
 
     return render_template(
         "admin_mass_ai.html",
-        admin_mode=ADMIN_MODE,
+        admin_mode=True,
+        admin_enabled=ADMIN_MODE,
         folders=folders,
         status=status,
     )
@@ -1791,7 +1869,7 @@ def admin_mass_ai():
 
 @app.route("/admin/pdf-cleanup", methods=["GET", "POST"])
 def admin_pdf_cleanup():
-    if not ADMIN_MODE:
+    if not has_admin_access():
         return redirect(url_for("browse"))
 
     status_message = None
@@ -1816,7 +1894,8 @@ def admin_pdf_cleanup():
 
     return render_template(
         "admin_pdf_cleanup.html",
-        admin_mode=ADMIN_MODE,
+        admin_mode=True,
+        admin_enabled=ADMIN_MODE,
         folders=folder_stats,
         selected=selected,
         status=status_message,
@@ -1825,7 +1904,7 @@ def admin_pdf_cleanup():
 
 @app.route("/admin/link-parts", methods=["GET", "POST"])
 def admin_link_parts():
-    if not ADMIN_MODE:
+    if not has_admin_access():
         return redirect(url_for("browse"))
 
     folders = list_top_level_folders()
@@ -1881,7 +1960,8 @@ def admin_link_parts():
 
     return render_template(
         "admin_link_parts.html",
-        admin_mode=ADMIN_MODE,
+        admin_mode=True,
+        admin_enabled=ADMIN_MODE,
         folders=[{"name": folder.name} for folder in folders],
         selected=selected,
         entries=entries,
@@ -1891,7 +1971,7 @@ def admin_link_parts():
 
 @app.post("/admin/mass-ai/start")
 def admin_mass_ai_start():
-    if not ADMIN_MODE or not AI_ENABLED:
+    if not has_admin_access() or not AI_ENABLED:
         abort(403)
     payload = request.get_json(silent=True) or {}
     folder_name = payload.get("folder", "")
@@ -1906,8 +1986,7 @@ def admin_mass_ai_start():
 
 @app.post("/admin/scrubber/start")
 def admin_scrubber_start():
-    if not ADMIN_MODE:
-        abort(403)
+    require_admin_access()
     payload = request.get_json(silent=True) or {}
     term = (payload.get("term") or "").strip()
     download_pdf = bool(payload.get("download_pdf"))
@@ -1923,15 +2002,13 @@ def admin_scrubber_start():
 
 @app.get("/admin/scrubber/status")
 def admin_scrubber_status():
-    if not ADMIN_MODE:
-        abort(403)
+    require_admin_access()
     return jsonify(get_scrub_status())
 
 
 @app.post("/admin/scrubber/cancel")
 def admin_scrubber_cancel():
-    if not ADMIN_MODE:
-        abort(403)
+    require_admin_access()
     with scrub_state["lock"]:
         cancel_event = scrub_state.get("cancel")
         if not scrub_state["running"] or not cancel_event:
@@ -1943,8 +2020,7 @@ def admin_scrubber_cancel():
 
 @app.post("/admin/mass-ai/cancel")
 def admin_mass_ai_cancel():
-    if not ADMIN_MODE:
-        abort(403)
+    require_admin_access()
     success, error = cancel_mass_ai_thread()
     if not success:
         return jsonify({"error": error}), 400
@@ -1953,14 +2029,13 @@ def admin_mass_ai_cancel():
 
 @app.get("/admin/mass-ai/status")
 def admin_mass_ai_status():
-    if not ADMIN_MODE:
-        abort(403)
+    require_admin_access()
     return jsonify(get_mass_ai_status())
 
 
 @app.route("/admin/composer-clean", methods=["GET", "POST"])
 def admin_composer_clean():
-    if not ADMIN_MODE:
+    if not has_admin_access():
         return redirect(url_for("browse"))
 
     folders = list_top_level_folders()
@@ -2001,7 +2076,8 @@ def admin_composer_clean():
 
     return render_template(
         "admin_composer_cleanup.html",
-        admin_mode=ADMIN_MODE,
+        admin_mode=True,
+        admin_enabled=ADMIN_MODE,
         folders=[{"name": f.name} for f in folders],
         selected=selected,
         composers=composers,
@@ -2011,7 +2087,7 @@ def admin_composer_clean():
 
 @app.route("/admin/ai-reset", methods=["GET", "POST"])
 def admin_ai_reset():
-    if not ADMIN_MODE:
+    if not has_admin_access():
         return redirect(url_for("browse"))
 
     folders = list_top_level_folders()
@@ -2035,7 +2111,8 @@ def admin_ai_reset():
 
     return render_template(
         "admin_ai_reset.html",
-        admin_mode=ADMIN_MODE,
+        admin_mode=True,
+        admin_enabled=ADMIN_MODE,
         folders=[{"name": f.name} for f in folders],
         selected=selected,
         status=status_message,
@@ -2044,14 +2121,15 @@ def admin_ai_reset():
 
 @app.route("/admin/scrubber", methods=["GET", "POST"])
 def admin_scrubber():
-    if not ADMIN_MODE:
+    if not has_admin_access():
         return redirect(url_for("browse"))
 
     status = get_scrub_status()
     term = request.args.get("term", "")
     return render_template(
         "admin_scrubber.html",
-        admin_mode=ADMIN_MODE,
+        admin_mode=True,
+        admin_enabled=ADMIN_MODE,
         summary=status.get("summary") or [],
         status=None,
         term=term,

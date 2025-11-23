@@ -4,7 +4,11 @@
         <meta charset="utf-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
         <title>Admin — King Midis</title>
-        <link rel="icon" type="image/png" href="{{ url_for('static', filename='images/logo.png') }}" />
+        <link
+            rel="icon"
+            type="image/png"
+            href="{{ url_for('static', filename='images/logo.png') }}"
+        />
         <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}" />
         <script>
             (function () {
@@ -18,12 +22,21 @@
             })();
         </script>
     </head>
-<body data-logo-base="work" data-admin="true">
+    <body data-logo-base="work" data-admin="true">
         <main class="container">
             <header class="page-header">
                 <div class="header-brand">
-                    <a href="{{ url_for('browse') }}" class="brand-link" aria-label="King Midis home">
-                        <span class="brand-logo" data-logo-state="work" role="img" aria-label="King Midis logo"></span>
+                    <a
+                        href="{{ url_for('browse') }}"
+                        class="brand-link"
+                        aria-label="King Midis home"
+                    >
+                        <span
+                            class="brand-logo"
+                            data-logo-state="work"
+                            role="img"
+                            aria-label="King Midis logo"
+                        ></span>
                     </a>
                     <div>
                         <p class="eyebrow">Admin</p>
@@ -33,7 +46,11 @@
 
                 <div class="header-actions">
                     <a href="{{ url_for('browse') }}" class="admin-link">Back</a>
-                    <button id="themeToggle" class="theme-toggle contrast" aria-label="Switch theme">
+                    <button
+                        id="themeToggle"
+                        class="theme-toggle contrast"
+                        aria-label="Switch theme"
+                    >
                         🌙
                     </button>
                 </div>
@@ -70,32 +87,56 @@
 
                 <ul class="file-list">
                     <li class="dir tool-item">
-                        <button type="button" class="tool-button" onclick="window.location='{{ url_for('admin_scrubber') }}'">
+                        <button
+                            type="button"
+                            class="tool-button"
+                            onclick="window.location='{{ url_for('admin_scrubber') }}'"
+                        >
                             Magic Midi Finder
                         </button>
                     </li>
                     <li class="dir tool-item">
-                        <button type="button" class="tool-button" onclick="window.location='{{ url_for('admin_mass_ai') }}'">
+                        <button
+                            type="button"
+                            class="tool-button"
+                            onclick="window.location='{{ url_for('admin_mass_ai') }}'"
+                        >
                             Mass AI Helper
                         </button>
                     </li>
                     <li class="dir tool-item">
-                        <button type="button" class="tool-button" onclick="window.location='{{ url_for('admin_link_parts') }}'">
+                        <button
+                            type="button"
+                            class="tool-button"
+                            onclick="window.location='{{ url_for('admin_link_parts') }}'"
+                        >
                             Link Parts
                         </button>
                     </li>
                     <li class="dir tool-item">
-                        <button type="button" class="tool-button" onclick="window.location='{{ url_for('admin_pdf_cleanup') }}'">
+                        <button
+                            type="button"
+                            class="tool-button"
+                            onclick="window.location='{{ url_for('admin_pdf_cleanup') }}'"
+                        >
                             Bulk PDF Cleanup
                         </button>
                     </li>
                     <li class="dir tool-item">
-                        <button type="button" class="tool-button" onclick="window.location='{{ url_for('admin_composer_clean') }}'">
+                        <button
+                            type="button"
+                            class="tool-button"
+                            onclick="window.location='{{ url_for('admin_composer_clean') }}'"
+                        >
                             Composer Cleanup
                         </button>
                     </li>
                     <li class="dir tool-item">
-                        <button type="button" class="tool-button" onclick="window.location='{{ url_for('admin_ai_reset') }}'">
+                        <button
+                            type="button"
+                            class="tool-button"
+                            onclick="window.location='{{ url_for('admin_ai_reset') }}'"
+                        >
                             Reset AI Flags
                         </button>
                     </li>

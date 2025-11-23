@@ -4,7 +4,11 @@
         <meta charset="utf-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
         <title>Mass AI Helper — King Midis</title>
-        <link rel="icon" type="image/png" href="{{ url_for('static', filename='images/logo.png') }}" />
+        <link
+            rel="icon"
+            type="image/png"
+            href="{{ url_for('static', filename='images/logo.png') }}"
+        />
         <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}" />
         <script>
             (function () {
@@ -22,8 +26,17 @@
         <main class="container">
             <header class="page-header">
                 <div class="header-brand">
-                    <a href="{{ url_for('browse') }}" class="brand-link" aria-label="King Midis home">
-                        <span class="brand-logo" data-logo-state="work" role="img" aria-label="King Midis logo"></span>
+                    <a
+                        href="{{ url_for('browse') }}"
+                        class="brand-link"
+                        aria-label="King Midis home"
+                    >
+                        <span
+                            class="brand-logo"
+                            data-logo-state="work"
+                            role="img"
+                            aria-label="King Midis logo"
+                        ></span>
                     </a>
                     <div>
                         <p class="eyebrow">Admin · Tool</p>
@@ -33,7 +46,11 @@
 
                 <div class="header-actions">
                     <a href="{{ url_for('admin_home') }}" class="admin-link">Admin Home</a>
-                    <button id="themeToggle" class="theme-toggle contrast" aria-label="Switch theme">
+                    <button
+                        id="themeToggle"
+                        class="theme-toggle contrast"
+                        aria-label="Switch theme"
+                    >
                         🌙
                     </button>
                 </div>
@@ -48,18 +65,20 @@
                     {% for entry in folders %}
                     <li class="dir">
                         <span class="file-label">{{ entry.name }}</span>
-                        <button class="icon-btn ai-run-btn" type="button" data-folder="{{ entry.name }}" title="Toggle AI run">
+                        <button
+                            class="icon-btn ai-run-btn"
+                            type="button"
+                            data-folder="{{ entry.name }}"
+                            title="Toggle AI run"
+                        >
                             🧠
                         </button>
                     </li>
                     {% endfor %}
                 </ul>
                 <p class="admin-status" id="massAiStatus">
-                    {% if status.running %}
-                    Running AI for {{ status.folder }}…
-                    {% else %}
-                    Select a folder to begin.
-                    {% endif %}
+                    {% if status.running %} Running AI for {{ status.folder }}… {% else %} Select a
+                    folder to begin. {% endif %}
                 </p>
             </section>
 
