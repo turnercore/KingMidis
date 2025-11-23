@@ -834,6 +834,12 @@ summary::-webkit-details-marker {
   width: 100%;
 }
 
+.admin-form .danger {
+  background: #ff4f4f;
+  border-color: transparent;
+  color: #fff;
+}
+
 .admin-status {
   font-size: 0.85rem;
   margin-top: 0.5rem;
