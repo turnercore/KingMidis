@@ -689,6 +689,7 @@ def update_metadata_for_path(midi_path: Path, listing: dict, part_label: str | N
         "composer": listing.get("composer"),
         "license": listing.get("license"),
         "source": listing.get("source", "Mutopia Project"),
+        "source_url": listing.get("source_url"),
         "instrument": default_instrument or listing.get("instrument_id"),
         "style": listing.get("style"),
         "period": listing.get("period"),
@@ -696,7 +697,6 @@ def update_metadata_for_path(midi_path: Path, listing: dict, part_label: str | N
         "instrumentation": listing.get("instrumentation"),
         "notes": listing.get("notes"),
         "contributor": listing.get("contributor") or listing.get("editor"),
-        "source_url": listing.get("source_url"),
     }
 
     changed = False

@@ -53,6 +53,8 @@
                         id="adminToggle"
                         class="admin-unlock-btn"
                         data-unlocked="{{ 'true' if admin_mode else 'false' }}"
+                        aria-label="{{ 'Lock admin controls' if admin_mode else 'Unlock admin controls' }}"
+                        title="{{ 'Lock admin controls' if admin_mode else 'Unlock admin controls' }}"
                     >
                         {% if admin_mode %}🔓{% else %}🔒{% endif %}
                     </button>
@@ -143,12 +145,14 @@
                                                 <p class="meta-label">Source</p>
                                                 <p>
                                                     {% if e.meta.source_url %}
-                                                    <a href="{{ e.meta.source_url }}" target="_blank" rel="noopener">
+                                                    <a
+                                                        href="{{ e.meta.source_url }}"
+                                                        target="_blank"
+                                                        rel="noopener"
+                                                    >
                                                         {{ e.meta.source or "Source" }}
                                                     </a>
-                                                    {% else %}
-                                                    {{ e.meta.source }}
-                                                    {% endif %}
+                                                    {% else %} {{ e.meta.source }} {% endif %}
                                                 </p>
                                             </div>
                                             {% endif %} {% if e.meta.instruments %}
@@ -211,6 +215,8 @@
                                     class="icon-btn download-btn"
                                     href="{{ url_for('midi_file', subpath=e.rel_path) }}"
                                     download="{{ e.name }}"
+                                    title="Download MIDI file"
+                                    aria-label="Download MIDI file"
                                 >
                                     ⬇ <span class="sr-only">Download MIDI</span>
                                 </a>
@@ -220,6 +226,8 @@
                                     class="icon-btn download-btn sheet-btn"
                                     href="{{ url_for('attachment_file', subpath=e.sheet_rel_path) }}"
                                     download
+                                    title="Download sheet music PDF"
+                                    aria-label="Download sheet music PDF"
                                 >
                                     📜 <span class="sr-only">Download sheet music</span>
                                 </a>
@@ -231,6 +239,8 @@
                                     data-slug="{{ e.slug }}"
                                     data-meta="{{ e.meta.form_defaults | tojson | safe }}"
                                     data-instrument="{{ e.instrument_id }}"
+                                    title="Edit metadata"
+                                    aria-label="Edit metadata"
                                 >
                                     ✏️ <span class="sr-only">Edit entry</span>
                                 </button>
@@ -260,9 +270,8 @@
                 </div>
 
                 <div class="player-instruments" role="group" aria-label="Instrument presets">
-                    {% set primary_presets = instrument_presets[:3] %}
-                    {% set extra_presets = instrument_presets[3:] %}
-                    {% set dynamic_preset = primary_presets[0] %}
+                    {% set primary_presets = instrument_presets[:3] %} {% set extra_presets =
+                    instrument_presets[3:] %} {% set dynamic_preset = primary_presets[0] %}
                     <button
                         type="button"
                         class="instrument-btn active"
@@ -449,17 +458,17 @@
         {% endif %}
 
         <!-- Tone.js -->
-<script src="https://cdn.jsdelivr.net/npm/tone/build/Tone.js"></script>
+        <script src="https://cdn.jsdelivr.net/npm/tone/build/Tone.js"></script>
 
         <!-- @tonejs/midi UMD build that exposes global `Midi` -->
-<script src="https://unpkg.com/@tonejs/midi"></script>
+        <script src="https://unpkg.com/@tonejs/midi"></script>
 
         <script>
             window.kmInstrumentPresets = {{ instrument_presets | tojson | safe }};
         </script>
         <!-- Your player logic (depends on `Tone` and `Midi` already being loaded) -->
-<script src="{{ url_for('static', filename='js/logo.js') }}"></script>
-<script src="{{ url_for('static', filename='js/player.js') }}"></script>
+        <script src="{{ url_for('static', filename='js/logo.js') }}"></script>
+        <script src="{{ url_for('static', filename='js/player.js') }}"></script>
         <script>
             document.addEventListener("DOMContentLoaded", () => {
                 const toggle = document.getElementById("themeToggle");
@@ -550,9 +559,7 @@
                     });
                 }
 
-                const folderLinks = document.querySelectorAll(
-                    ".file-list li.dir a[role='button']"
-                );
+                const folderLinks = document.querySelectorAll(".file-list li.dir a[role='button']");
                 folderLinks.forEach((link) => {
                     link.addEventListener("click", () => {
                         if (link.dataset.loading === "true") return;
