@@ -135,11 +135,6 @@
                                                 <p class="meta-label">Contributor</p>
                                                 <p>{{ e.meta.contributor }}</p>
                                             </div>
-                                            {% endif %} {% if e.meta.modified_by %}
-                                            <div>
-                                                <p class="meta-label">Modified by</p>
-                                                <p>{{ e.meta.modified_by }}</p>
-                                            </div>
                                             {% endif %} {% if e.meta.source %}
                                             <div>
                                                 <p class="meta-label">Source</p>
@@ -402,11 +397,6 @@
                     <label>
                         Contributor
                         <input type="text" id="entryContributor" />
-                    </label>
-
-                    <label>
-                        Modified by
-                        <input type="text" name="modified_by" id="entryModifier" />
                     </label>
 
                     <label>

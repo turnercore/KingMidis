@@ -454,7 +454,6 @@ function initAdminEditor() {
         name: document.getElementById("entryName"),
         composer: document.getElementById("entryComposer"),
         contributor: document.getElementById("entryContributor"),
-        modified_by: document.getElementById("entryModifier"),
         source: document.getElementById("entrySource"),
         license: document.getElementById("entryLicense"),
         instrument: document.getElementById("entryInstrument"),
@@ -480,7 +479,6 @@ function initAdminEditor() {
         name: fields.name.value,
         composer: fields.composer.value,
         contributor: fields.contributor.value,
-        modified_by: fields.modified_by.value,
         source: fields.source.value,
         license: fields.license.value,
         instrument: fields.instrument.value,
@@ -532,7 +530,6 @@ function initAdminEditor() {
         fields.name.value = metaDefaults.name || "";
         fields.composer.value = metaDefaults.composer || "";
         fields.contributor.value = metaDefaults.contributor || "";
-        fields.modified_by.value = metaDefaults.modified_by || "";
         fields.source.value = metaDefaults.source || "";
         fields.license.value = metaDefaults.license || "Public Domain";
         fields.instrument.value =

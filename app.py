@@ -185,7 +185,6 @@ SHARED_WORK_FIELDS = {
     "license",
     "source",
     "contributor",
-    "modified_by",
     "bpm",
     "genre",
     "tags",
@@ -444,7 +443,6 @@ def build_meta_context(
 
     composer = meta_data.get("composer") or parent_name or midi_path.stem
     contributor = meta_data.get("contributor") or meta_data.get("editor")
-    modified_by = meta_data.get("modified_by")
     source = meta_data.get("source")
     source_url = meta_data.get("source_url")
     instrument_choice = normalize_instrument_choice(
@@ -480,8 +478,6 @@ def build_meta_context(
     lines = [f"{display_name} by {composer}"]
     if contributor:
         lines.append(f"Contributed by {contributor}")
-    if modified_by:
-        lines.append(f"Modified by {modified_by}")
     if source:
         lines.append(f"Source: {source}")
     lines.append(f"Licensed under {license_value}")
@@ -490,7 +486,6 @@ def build_meta_context(
         "name": meta_data.get("name", "") or display_name,
         "composer": meta_data.get("composer", "") or composer,
         "contributor": contributor or "",
-        "modified_by": meta_data.get("modified_by", ""),
         "source": meta_data.get("source", ""),
         "source_url": source_url or "",
         "license": meta_data.get("license") or meta_data.get("liscense") or "Public Domain",
@@ -514,7 +509,6 @@ def build_meta_context(
         "display_name": display_name,
         "composer": composer,
         "contributor": contributor,
-        "modified_by": modified_by,
         "source": source,
         "source_url": source_url,
         "instrument": instrument_choice,
@@ -1272,7 +1266,6 @@ def update_entry():
         "name": metadata.get("name", ""),
         "composer": metadata.get("composer", ""),
         "contributor": metadata.get("contributor", ""),
-        "modified_by": metadata.get("modified_by", ""),
         "source": metadata.get("source", ""),
         "license": metadata.get("license") or "Public Domain",
         "instrument": instrument_choice,
