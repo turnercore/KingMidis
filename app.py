@@ -58,6 +58,11 @@ mass_ai_state = {
     "log": [],
     "cancel": None,
 }
+def mass_ai_log_append(message: str):
+    with mass_ai_state["lock"]:
+        mass_ai_state["log"].append(message)
+        if len(mass_ai_state["log"]) > 500:
+            mass_ai_state["log"] = mass_ai_state["log"][-500:]
 scrub_state = {
     "lock": threading.Lock(),
     "jobs": [],
@@ -1733,11 +1738,13 @@ def start_mass_ai_thread(folder: Path):
             return False, "Maximum concurrent AI jobs running."
         cancel_event = threading.Event()
         log = [f"Starting AI for {folder.name}"]
-        job = {"folder": folder.name, "cancel": cancel_event, "log": log}
-        mass_ai_state["jobs"].append(job)
-        mass_ai_state["log"].append(log[0])
+        mass_ai_state["jobs"].append(
+            {"folder": folder.name, "cancel": cancel_event, "log": mass_ai_state["log"]}
+        )
+        mass_ai_state["log"].append(f"Starting AI for {folder.name}")
 
-    def worker(job_entry):
+    job_entry = mass_ai_state["jobs"][-1]
+    def worker():
         try:
             mass_ai_process_folder(
                 folder, job_entry["log"], cancel_event)
@@ -1749,9 +1756,9 @@ def start_mass_ai_thread(folder: Path):
                 mass_ai_state["jobs"] = [
                     item for item in mass_ai_state["jobs"] if item is not job_entry
                 ]
-                mass_ai_state["log"].extend(job_entry["log"])
+                mass_ai_state["log"].append(f"Finished AI for {folder.name}")
 
-    thread = threading.Thread(target=worker, args=(job,), daemon=True)
+    thread = threading.Thread(target=worker, daemon=True)
     thread.start()
     return True, None
 
@@ -1833,8 +1840,11 @@ def cancel_mass_ai_thread():
 
 def get_mass_ai_status():
     with mass_ai_state["lock"]:
+        running = len(mass_ai_state["jobs"]) > 0
+        current_folder = mass_ai_state["jobs"][0]["folder"] if running else None
         return {
-            "running": len(mass_ai_state["jobs"]) > 0,
+            "running": running,
+            "folder": current_folder,
             "folders": [job["folder"] for job in mass_ai_state["jobs"]],
             "log": list(mass_ai_state["log"]),
         }

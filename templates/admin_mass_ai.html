@@ -100,6 +100,33 @@
                 const statusEl = document.getElementById("massAiStatus");
                 const logOutput = document.getElementById("massAiLog");
                 const initialStatus = {{ status|tojson }};
+                let currentLog = initialStatus.log ? [...initialStatus.log] : [];
+                const renderLog = (entries) => {
+                    if (!logOutput) return;
+                    if (!entries || !entries.length) {
+                        logOutput.textContent = "No activity yet.";
+                    } else {
+                        logOutput.textContent = entries.join("\n");
+                    }
+                    currentLog = entries ? [...entries] : [];
+                    logOutput.scrollTop = logOutput.scrollHeight;
+                };
+                const appendLogEntries = (entries) => {
+                    if (!logOutput) return;
+                    if (!entries) entries = [];
+                    if (entries.length < currentLog.length) {
+                        renderLog(entries);
+                        return;
+                    }
+                    const newEntries = entries.slice(currentLog.length);
+                    if (!newEntries.length) return;
+                    if (logOutput.textContent && !logOutput.textContent.endsWith("\n")) {
+                        logOutput.textContent += "\n";
+                    }
+                    logOutput.textContent += newEntries.join("\n");
+                    currentLog = [...entries];
+                    logOutput.scrollTop = logOutput.scrollHeight;
+                };
 
                 const updateTheme = (theme) => {
                     root.setAttribute("data-theme", theme);
@@ -164,7 +191,14 @@
                         setRunningState(btn.closest("li"));
                         if (statusEl) statusEl.textContent = `Running AI for ${folder}…`;
                         if (logOutput) {
-                            logOutput.textContent = `Running AI for ${folder}…\n` + (logOutput.textContent || "");
+                            if (!logOutput.textContent) {
+                                logOutput.textContent = "";
+                            }
+                            if (!logOutput.textContent.endsWith("\n") && logOutput.textContent !== "") {
+                                logOutput.textContent += "\n";
+                            }
+                            logOutput.textContent += `Running AI for ${folder}…`;
+                            currentLog = [...currentLog, `Running AI for ${folder}…`];
                         }
                         if (typeof window.kmLogoSetThinking === "function") {
                             window.kmLogoSetThinking(true);
@@ -179,12 +213,10 @@
                     setRunningState(null);
                     if (statusEl) statusEl.textContent = "Idle.";
                 }
-                if (logOutput && initialStatus.log) {
-                    logOutput.textContent = initialStatus.log.join("\n") || "No activity yet.";
-                }
+                renderLog(currentLog);
                 const pollStatus = async () => {
                     try {
-                        const res = await fetch("/admin/mass-ai/status");
+                        const res = await fetch("/admin/mass-ai/status", { cache: "no-store" });
                         const payload = await res.json();
                         if (payload.running) {
                             if (statusEl) statusEl.textContent = `Running AI for ${payload.folder}…`;
@@ -196,10 +228,7 @@
                                 window.kmLogoSetThinking(false);
                             }
                         }
-                        if (logOutput && payload.log) {
-                            logOutput.textContent = payload.log.join("\n") || "No activity yet.";
-                            logOutput.scrollTop = logOutput.scrollHeight;
-                        }
+                        appendLogEntries(payload.log);
                     } catch (err) {
                         console.error(err);
                     } finally {
