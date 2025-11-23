@@ -224,10 +224,12 @@ function volumeToDb(value) {
 
 function applyVolume(value, { persist = true, updateSlider = true } = {}) {
     const clamped = Math.min(Math.max(value, 0), 100);
-    const db = volumeToDb(clamped);
-    Tone.Destination.volume.rampTo(db, 0.05);
-
-    if (clamped > 0) {
+    if (clamped <= 0) {
+        Tone.Destination.mute = true;
+    } else {
+        Tone.Destination.mute = false;
+        const db = volumeToDb(clamped);
+        Tone.Destination.volume.rampTo(db, 0.05);
         lastNonZeroVolume = clamped;
     }
 
