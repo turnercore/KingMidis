@@ -4,6 +4,7 @@
         <meta charset="utf-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
         <title>King Midis</title>
+        <link rel="icon" type="image/png" href="{{ url_for('static', filename='images/logo.png') }}" />
 
         <script>
             (function () {
@@ -25,9 +26,12 @@
     <body data-admin="{{ 'true' if admin_mode else 'false' }}">
         <main class="container">
             <header class="page-header">
-                <div>
-                    <p class="eyebrow">Collection</p>
-                    <h1>King Midis</h1>
+                <div class="header-brand">
+                    <img src="{{ url_for('static', filename='images/logo.png') }}" alt="King Midis logo" class="brand-logo" />
+                    <div>
+                        <p class="eyebrow">Collection</p>
+                        <h1>{{ collection_title }}</h1>
+                    </div>
                 </div>
 
                 <div class="header-actions">

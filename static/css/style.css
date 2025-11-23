@@ -45,6 +45,19 @@ main.container {
   margin-bottom: 1.5rem;
 }
 
+.header-brand {
+  display: flex;
+  align-items: center;
+  gap: 0.9rem;
+}
+
+.brand-logo {
+  width: 72px;
+  height: 72px;
+  object-fit: contain;
+  flex-shrink: 0;
+}
+
 .page-header h1 {
   margin: 0;
   font-size: clamp(1.8rem, 2vw, 2.4rem);
@@ -189,7 +202,7 @@ main.container {
   align-items: center;
   gap: 0.45rem;
   margin-left: auto;
-  align-self: flex-start;
+  align-self: center;
 }
 
 .icon-btn {
@@ -241,6 +254,12 @@ main.container {
 
 .meta-summary {
   list-style: none;
+}
+
+.meta-summary::marker,
+.meta-summary::-webkit-details-marker {
+  display: none;
+  content: "";
 }
 
 .meta-details summary::-webkit-details-marker {
@@ -570,7 +589,8 @@ main.container {
 }
 
 .admin-close,
-.admin-save {
+.admin-save,
+.admin-ai {
   width: 40px;
   height: 40px;
   border-radius: 50%;
@@ -585,8 +605,26 @@ main.container {
 }
 
 .admin-close:hover,
-.admin-save:hover {
+.admin-save:hover,
+.admin-ai:hover {
   border-color: var(--accent);
+}
+
+.admin-ai.loading {
+  border-color: var(--accent);
+  background: rgba(123, 126, 251, 0.2);
+  animation: aiPulse 0.8s ease-in-out infinite alternate;
+}
+
+@keyframes aiPulse {
+  from {
+    transform: scale(1);
+    box-shadow: 0 0 0 rgba(123, 126, 251, 0.2);
+  }
+  to {
+    transform: scale(1.05);
+    box-shadow: 0 0 20px rgba(123, 126, 251, 0.35);
+  }
 }
 
 .admin-form label {

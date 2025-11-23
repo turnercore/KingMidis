@@ -63,8 +63,8 @@ const INSTRUMENT_PRESETS = {
         label: "Harp",
         create: () =>
             new Tone.PolySynth(Tone.PluckSynth, {
-                dampening: 3000,
-                resonance: 0.7,
+                dampening: 3200,
+                resonance: 0.8,
             }).toDestination(),
     },
     brass: {
@@ -100,6 +100,33 @@ const INSTRUMENT_PRESETS = {
                 oscillator: { type: "square" },
                 envelope: { attack: 0.05, decay: 0.3, sustain: 0.8, release: 1.5 },
                 filter: { type: "lowpass", frequency: 6000 },
+            }).toDestination(),
+    },
+    woodwind: {
+        label: "Woodwinds",
+        create: () =>
+            new Tone.PolySynth(Tone.Synth, {
+                oscillator: { type: "triangle" },
+                envelope: { attack: 0.08, decay: 0.4, sustain: 0.6, release: 1.4 },
+                vibratoAmount: 0.3,
+            }).toDestination(),
+    },
+    percussion: {
+        label: "Percussion",
+        create: () =>
+            new Tone.PolySynth(Tone.Synth, {
+                oscillator: { type: "square" },
+                envelope: { attack: 0.001, decay: 0.2, sustain: 0.1, release: 0.2 },
+                filter: { type: "highpass", frequency: 200 },
+            }).toDestination(),
+    },
+    pad: {
+        label: "Ambient Pad",
+        create: () =>
+            new Tone.PolySynth(Tone.Synth, {
+                oscillator: { type: "sawtooth" },
+                envelope: { attack: 0.8, decay: 1.2, sustain: 0.9, release: 4 },
+                filter: { type: "lowpass", frequency: 8000 },
             }).toDestination(),
     },
 };

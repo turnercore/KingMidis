@@ -36,20 +36,26 @@ INSTRUMENT_PRESETS = [
     {"id": "digital", "label": "Digital Synth", "emoji": "🎛️"},
     {"id": "strings", "label": "Strings", "emoji": "🎻"},
     {"id": "guitar", "label": "Guitar", "emoji": "🎸"},
-    {"id": "harp", "label": "Harp", "emoji": "🎼"},
+    {"id": "harp", "label": "Harp", "emoji": "🪕"},
     {"id": "brass", "label": "Brass", "emoji": "🎺"},
     {"id": "voice", "label": "Choir/Voice", "emoji": "🎤"},
-    {"id": "organ", "label": "Organ", "emoji": "🎹"},
+    {"id": "organ", "label": "Organ", "emoji": "⛪"},
+    {"id": "woodwind", "label": "Woodwinds", "emoji": "🎷"},
+    {"id": "percussion", "label": "Percussion", "emoji": "🥁"},
+    {"id": "pad", "label": "Ambient Pad", "emoji": "🌀"},
 ]
 DEFAULT_INSTRUMENT_ID = "piano"
 INSTRUMENT_LOOKUP = {preset["id"]: preset for preset in INSTRUMENT_PRESETS}
 INSTRUMENT_KEYWORDS = [
     (["guitar"], "guitar"),
     (["harp"], "harp"),
-    (["choir", "voice", "vocal", "soprano", "alto", "tenor", "bass"], "voice"),
+    (["choir", "voice", "vocal", "singer", "soprano", "alto", "tenor", "bass"], "voice"),
     (["violin", "viola", "cello", "string", "orchestra", "ensemble"], "strings"),
-    (["flute", "oboe", "clarinet", "wind"], "strings"),
-    (["organ"], "organ"),
+    (["flute", "oboe", "clarinet", "sax", "woodwind", "recorder"], "woodwind"),
+    (["organ", "pipe", "church"], "organ"),
+    (["brass", "trumpet", "trombone", "horn", "cornet"], "brass"),
+    (["drum", "percussion", "snare", "timpani", "cymbal"], "percussion"),
+    (["pad", "ambient", "sustain"], "pad"),
     (["harpsichord", "synth", "keyboard"], "digital"),
 ]
 
@@ -110,7 +116,8 @@ def ensure_meta(midi_path: Path) -> dict:
         "instrument": DEFAULT_INSTRUMENT_ID,
     }
     meta_path = meta_path_for_write(midi_path)
-    meta_path.write_text(yaml.safe_dump(default_meta, allow_unicode=True, sort_keys=False))
+    meta_path.write_text(yaml.safe_dump(
+        default_meta, allow_unicode=True, sort_keys=False))
     return default_meta
 
 
@@ -141,6 +148,16 @@ def parse_instrument_parts(text: str) -> list[str]:
     return parts
 
 
+def derive_collection_title(subpath: str) -> str:
+    if not subpath:
+        return "King Midis"
+    root = subpath.strip("/").split("/", 1)[0]
+    clean = re.sub(r"[-_]+", " ", root).strip()
+    if clean:
+        return clean.title()
+    return "King Midis"
+
+
 def build_meta_context(midi_path: Path, meta_data: dict | None, rel_path: str) -> dict:
     meta_data = meta_data or {}
     parent_name = midi_path.parent.name if midi_path.parent != midi_path else ""
@@ -150,9 +167,11 @@ def build_meta_context(midi_path: Path, meta_data: dict | None, rel_path: str) -
     editor = meta_data.get("editor")
     modified_by = meta_data.get("modified_by")
     source = meta_data.get("source")
-    instrument_choice = normalize_instrument_choice(meta_data.get("instrument") or meta_data.get("instruments"))
+    instrument_choice = normalize_instrument_choice(
+        meta_data.get("instrument") or meta_data.get("instruments"))
     preset_lookup = {preset["id"]: preset for preset in INSTRUMENT_PRESETS}
-    preset = preset_lookup.get(instrument_choice, preset_lookup[DEFAULT_INSTRUMENT_ID])
+    preset = preset_lookup.get(
+        instrument_choice, preset_lookup[DEFAULT_INSTRUMENT_ID])
 
     license_value = (
         meta_data.get("license")
@@ -163,9 +182,11 @@ def build_meta_context(midi_path: Path, meta_data: dict | None, rel_path: str) -
     genre_value = meta_data.get("genre") or ""
     tags_value = meta_data.get("tags") or []
     if isinstance(tags_value, str):
-        tags_list = [tag.strip() for tag in tags_value.split(",") if tag.strip()]
+        tags_list = [tag.strip()
+                     for tag in tags_value.split(",") if tag.strip()]
     elif isinstance(tags_value, (list, tuple)):
-        tags_list = [str(tag).strip() for tag in tags_value if str(tag).strip()]
+        tags_list = [str(tag).strip()
+                     for tag in tags_value if str(tag).strip()]
     else:
         tags_list = []
 
@@ -191,7 +212,8 @@ def build_meta_context(midi_path: Path, meta_data: dict | None, rel_path: str) -
         "tags": ", ".join(tags_list),
     }
 
-    preset = INSTRUMENT_LOOKUP.get(instrument_choice) or INSTRUMENT_LOOKUP[DEFAULT_INSTRUMENT_ID]
+    preset = INSTRUMENT_LOOKUP.get(
+        instrument_choice) or INSTRUMENT_LOOKUP[DEFAULT_INSTRUMENT_ID]
 
     return {
         "has_meta": bool(meta_data),
@@ -252,7 +274,8 @@ def locate_sheet_path(midi_path: Path) -> Path | None:
 
     possible_suffixes = ["-a4", "-letter"]
     for suffix in possible_suffixes:
-        candidate = midi_path.with_name(f"{midi_path.stem}{suffix}{SHEET_SUFFIX}")
+        candidate = midi_path.with_name(
+            f"{midi_path.stem}{suffix}{SHEET_SUFFIX}")
         if candidate.exists():
             return candidate
 
@@ -291,11 +314,20 @@ def update_metadata_for_path(midi_path: Path, listing: dict, part_label: str | N
             changed = True
 
     meta_path = meta_path_for_write(midi_path)
-    meta_path.write_text(yaml.safe_dump(merged, allow_unicode=True, sort_keys=False))
+    meta_path.write_text(yaml.safe_dump(
+        merged, allow_unicode=True, sort_keys=False))
 
     if not existing:
         return "Metadata created"
     return "Metadata updated" if changed else "Metadata unchanged"
+
+
+def statuses_have_changes(statuses: list[str]) -> bool:
+    haystack = " ".join(statuses).lower()
+    for keyword in ("downloaded", "created", "updated"):
+        if keyword in haystack:
+            return True
+    return False
 
 
 def clean_composer_name(raw: str) -> str:
@@ -443,7 +475,8 @@ def scrobble_mutopia(
         if not tables:
             if start_offset == 0:
                 log_fn("No listings returned.")
-                results.append({"title": "No results", "status": "Nothing found"})
+                results.append(
+                    {"title": "No results", "status": "Nothing found"})
             break
 
         for table in tables:
@@ -454,48 +487,56 @@ def scrobble_mutopia(
 
             if listing.get("skip"):
                 log_fn(f"Skipping {listing.get('title')}: {listing['skip']}")
-                results.append({"title": listing.get("title"), "status": listing["skip"]})
+                results.append({"title": listing.get(
+                    "title"), "status": listing["skip"]})
                 continue
 
+            target_phase = None
             if mode == "test":
                 if not test_state["first"]:
-                    pass
+                    target_phase = "first"
                 elif not test_state["second"]:
                     if start_offset == 0:
                         continue
+                    target_phase = "second"
                 elif not test_state["zip"]:
                     if not listing.get("midi_zip_url"):
                         continue
+                    target_phase = "zip"
                 else:
                     continue
 
             log_fn(f"Processing {listing['title']}")
-            statuses = process_listing(listing, target_dir, download_pdf, log_fn)
+            statuses = process_listing(
+                listing, target_dir, download_pdf, log_fn)
             summary_status = "; ".join(statuses)
             log_fn(f"Finished {listing['title']}: {summary_status}")
-            results.append({"title": listing["title"], "status": summary_status})
+            results.append(
+                {"title": listing["title"], "status": summary_status})
 
-            if mode == "test":
-                if not test_state["first"]:
-                    test_state["first"] = True
+            if mode == "test" and target_phase:
+                if statuses_have_changes(statuses):
+                    test_state[target_phase] = True
+                    if all(test_state.values()):
+                        log_fn("Test run complete.")
+                        return results
+                else:
+                    log_fn("Entry unchanged during test run; searching for another example.")
                     continue
-                if not test_state["second"]:
-                    test_state["second"] = True
-                    continue
-                if not test_state["zip"] and listing.get("midi_zip_url"):
-                    test_state["zip"] = True
-                    log_fn("Test run complete.")
-                    return results
 
-        next_link = soup.find("a", string=lambda text: text and "Next 10" in text)
+        next_link = soup.find(
+            "a", string=lambda text: text and "Next 10" in text)
         if next_link:
             start_offset += 10
             log_fn("Moving to next page…")
         else:
             break
 
-    if mode == "test" and not test_state["zip"]:
-        log_fn("Test run finished without encountering a multi-part entry.")
+    if mode == "test":
+        if not test_state["zip"]:
+            log_fn("Test run finished without encountering a multi-part entry.")
+        else:
+            log_fn("Test run complete.")
     else:
         log_fn("Scrubbing complete.")
     return results
@@ -526,7 +567,8 @@ def process_single_listing(listing: dict, target_dir: Path, download_pdf: bool) 
         statuses.append("MIDI downloaded")
 
     if download_pdf:
-        pdf_status = download_pdf_for_listing(listing, target_dir / f"{slug}-a4.pdf")
+        pdf_status = download_pdf_for_listing(
+            listing, target_dir / f"{slug}-a4.pdf")
         if pdf_status:
             statuses.append(pdf_status)
 
@@ -545,10 +587,12 @@ def download_pdf_for_listing(listing: dict, destination: Path) -> str | None:
             return f"PDF failed: {exc}"
     if listing.get("pdf_zip_url"):
         try:
-            resp = requests.get(listing["pdf_zip_url"], timeout=30, headers=REQUEST_HEADERS)
+            resp = requests.get(
+                listing["pdf_zip_url"], timeout=30, headers=REQUEST_HEADERS)
             resp.raise_for_status()
             with zipfile.ZipFile(io.BytesIO(resp.content)) as pdf_zip:
-                pdf_names = sorted([n for n in pdf_zip.namelist() if n.lower().endswith(".pdf")])
+                pdf_names = sorted(
+                    [n for n in pdf_zip.namelist() if n.lower().endswith(".pdf")])
                 if pdf_names:
                     destination.write_bytes(pdf_zip.read(pdf_names[0]))
                     return "PDF downloaded"
@@ -580,10 +624,12 @@ def process_zip_listing(listing: dict, target_dir: Path, download_pdf: bool, log
     statuses: list[str] = []
     slug = slugify(listing["title"])
 
-    resp = requests.get(listing["midi_zip_url"], timeout=30, headers=REQUEST_HEADERS)
+    resp = requests.get(listing["midi_zip_url"],
+                        timeout=30, headers=REQUEST_HEADERS)
     resp.raise_for_status()
     midi_zip = zipfile.ZipFile(io.BytesIO(resp.content))
-    midi_entries = sorted([n for n in midi_zip.namelist() if n.lower().endswith(".mid")])
+    midi_entries = sorted([n for n in midi_zip.namelist()
+                          if n.lower().endswith(".mid")])
 
     pdf_zip = None
     pdf_entries: list[str] = []
@@ -592,19 +638,24 @@ def process_zip_listing(listing: dict, target_dir: Path, download_pdf: bool, log
     if download_pdf:
         if listing.get("pdf_zip_url"):
             try:
-                pdf_resp = requests.get(listing["pdf_zip_url"], timeout=30, headers=REQUEST_HEADERS)
+                pdf_resp = requests.get(
+                    listing["pdf_zip_url"], timeout=30, headers=REQUEST_HEADERS)
                 pdf_resp.raise_for_status()
                 pdf_zip = zipfile.ZipFile(io.BytesIO(pdf_resp.content))
-                pdf_entries = sorted([n for n in pdf_zip.namelist() if n.lower().endswith(".pdf")])
+                pdf_entries = sorted(
+                    [n for n in pdf_zip.namelist() if n.lower().endswith(".pdf")])
             except Exception as exc:
                 statuses.append(f"PDF zip failed: {exc}")
         elif listing.get("pdf_url"):
             try:
-                pdf_single_data = requests.get(listing["pdf_url"], timeout=30, headers=REQUEST_HEADERS).content
+                pdf_single_data = requests.get(
+                    listing["pdf_url"], timeout=30, headers=REQUEST_HEADERS).content
             except Exception as exc:
                 statuses.append(f"PDF failed: {exc}")
 
-    parts = parse_instrument_parts(listing.get("instrumentation"))
+    parts = parse_instrument_parts(
+        listing.get("instrumentation") or listing.get("title") or ""
+    )
 
     for idx, midi_name in enumerate(midi_entries):
         part_label = parts[idx] if idx < len(parts) else Path(midi_name).stem
@@ -622,7 +673,8 @@ def process_zip_listing(listing: dict, target_dir: Path, download_pdf: bool, log
             if not pdf_dest.exists():
                 pdf_bytes = None
                 if pdf_zip and pdf_entries:
-                    entry_name = select_pdf_entry(pdf_entries, midi_name, part_label)
+                    entry_name = select_pdf_entry(
+                        pdf_entries, midi_name, part_label)
                     if entry_name:
                         pdf_bytes = pdf_zip.read(entry_name)
                 elif pdf_single_data and idx == 0:
@@ -678,9 +730,11 @@ def browse(subpath: str):
             entry["meta"] = meta_context
             entry["display_name"] = meta_context["display_name"]
             entry["instrument_icon"] = meta_context["instrument_icon"]
-            entry["instrument_id"] = meta_context["form_defaults"].get("instrument", DEFAULT_INSTRUMENT_ID)
+            entry["instrument_id"] = meta_context["form_defaults"].get(
+                "instrument", DEFAULT_INSTRUMENT_ID)
             sheet_path = locate_sheet_path(child)
-            entry["sheet_rel_path"] = str(sheet_path.relative_to(BASE_DIR)) if sheet_path else None
+            entry["sheet_rel_path"] = str(
+                sheet_path.relative_to(BASE_DIR)) if sheet_path else None
         else:
             entry["meta"] = None
             entry["sheet_rel_path"] = None
@@ -700,6 +754,7 @@ def browse(subpath: str):
         admin_mode=ADMIN_MODE,
         instrument_presets=INSTRUMENT_PRESETS,
         openai_enabled=AI_ENABLED,
+        collection_title=derive_collection_title(subpath),
     )
 
 
@@ -741,7 +796,8 @@ def update_entry():
     metadata = payload.get("metadata") or {}
 
     try:
-        sanitized_slug = sanitize_slug(new_slug) if new_slug else midi_path.stem
+        sanitized_slug = sanitize_slug(
+            new_slug) if new_slug else midi_path.stem
     except ValueError as exc:
         return jsonify({"error": str(exc)}), 400
 
@@ -787,9 +843,11 @@ def update_entry():
     tags_value = metadata.get("tags")
     tags_list: list[str] = []
     if isinstance(tags_value, str):
-        tags_list = [tag.strip() for tag in tags_value.split(",") if tag.strip()]
+        tags_list = [tag.strip()
+                     for tag in tags_value.split(",") if tag.strip()]
     elif isinstance(tags_value, (list, tuple)):
-        tags_list = [str(tag).strip() for tag in tags_value if str(tag).strip()]
+        tags_list = [str(tag).strip()
+                     for tag in tags_value if str(tag).strip()]
     if tags_list:
         meta_payload["tags"] = tags_list
 
@@ -839,14 +897,14 @@ def ai_suggest_metadata():
         "Given the JSON payload below, return improved values as JSON with the keys "
         "`name` (title string), `composer` (string), `bpm` (number), "
         "`genre` (string), and `tags` (array of 3-6 short descriptive strings). "
-        "Only respond with valid JSON and do not include prose.\n\n"
+        "Only respond with valid JSON and do not include prose. "
+        "If the metadata already includes a composer, keep that value unless you are certain it should change.\n\n"
         f"Input:\n{json.dumps(context_blob, ensure_ascii=False, indent=2)}"
     )
 
     try:
         completion = openai_client.chat.completions.create(
             model=OPENAI_MODEL,
-            temperature=0.2,
             messages=[
                 {
                     "role": "system",
@@ -869,15 +927,17 @@ def ai_suggest_metadata():
 
     tags_value = suggestion.get("tags")
     if isinstance(tags_value, str):
-        tags_list = [tag.strip() for tag in tags_value.split(",") if tag.strip()]
+        tags_list = [tag.strip()
+                     for tag in tags_value.split(",") if tag.strip()]
     elif isinstance(tags_value, (list, tuple)):
-        tags_list = [str(tag).strip() for tag in tags_value if str(tag).strip()]
+        tags_list = [str(tag).strip()
+                     for tag in tags_value if str(tag).strip()]
     else:
         tags_list = []
 
     result = {
         "name": suggestion.get("name", ""),
-        "composer": suggestion.get("composer", ""),
+        "composer": suggestion.get("composer") or working_meta.get("composer", ""),
         "bpm": bpm_value,
         "genre": suggestion.get("genre", ""),
         "tags": tags_list,
@@ -908,7 +968,7 @@ def admin_scrubber():
     log_lines: list[str] = []
 
     def log_fn(message: str):
-        print(f"[Scrubber] {message}")
+        print(f"[Magic Midi Finder {message}")
         log_lines.append(message)
 
     if request.method == "POST":
