@@ -381,6 +381,7 @@ function initAdminEditor() {
         source: document.getElementById("entrySource"),
         license: document.getElementById("entryLicense"),
         instrument: document.getElementById("entryInstrument"),
+        attachments: document.getElementById("entryAttachments"),
         genre: document.getElementById("entryGenre"),
         tags: document.getElementById("entryTags"),
         bpm: document.getElementById("entryBpm"),
@@ -404,6 +405,7 @@ function initAdminEditor() {
         source: fields.source.value,
         license: fields.license.value,
         instrument: fields.instrument.value,
+        attachments: fields.attachments.value,
         bpm: fields.bpm.value,
         genre: fields.genre.value,
         tags: fields.tags.value,
@@ -435,6 +437,7 @@ function initAdminEditor() {
         fields.license.value = metaDefaults.license || "Public Domain";
         fields.instrument.value = button.dataset.instrument || metaDefaults.instrument || "piano";
         fields.bpm.value = metaDefaults.bpm || "";
+        fields.attachments.value = (metaDefaults.attachments || []).join(", ");
         fields.genre.value = metaDefaults.genre || "";
         fields.tags.value = metaDefaults.tags || "";
 
@@ -523,7 +526,7 @@ function initAdminEditor() {
                 const suggestion = body.suggestion || {};
                 if (suggestion.name) fields.name.value = suggestion.name;
                 if (suggestion.composer) fields.composer.value = suggestion.composer;
-                if (typeof suggestion.bpm === "number") {
+                if (typeof suggestion.bpm === "number" && suggestion.bpm > 0) {
                     fields.bpm.value = Math.round(suggestion.bpm);
                 }
                 if (suggestion.genre !== undefined) {

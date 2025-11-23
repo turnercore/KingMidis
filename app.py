@@ -148,6 +148,51 @@ def parse_instrument_parts(text: str) -> list[str]:
     return parts
 
 
+def normalize_attachment_list(value) -> list[str]:
+    if value in (None, "", False):
+        return []
+    if isinstance(value, str):
+        parts = re.split(r"[,\n]+", value)
+    elif isinstance(value, (list, tuple, set)):
+        parts = value
+    else:
+        return []
+    normalized = []
+    for item in parts:
+        text = str(item).strip()
+        if text and text not in normalized:
+            normalized.append(text)
+    return normalized
+
+
+def discover_pdf_attachments(midi_path: Path) -> list[str]:
+    results: list[str] = []
+    pattern = f"{midi_path.stem}*.pdf"
+    for candidate in midi_path.parent.glob(pattern):
+        if candidate.is_file():
+            results.append(candidate.name)
+    return results
+
+
+def merge_attachment_lists(lists: list[list[str]]) -> list[str]:
+    seen = set()
+    merged: list[str] = []
+    for lst in lists:
+        for item in lst:
+            if item and item not in seen:
+                merged.append(item)
+                seen.add(item)
+    return merged
+
+
+def collect_attachment_candidates(midi_path: Path, meta_data: dict | None) -> list[str]:
+    manual = normalize_attachment_list(
+        (meta_data or {}).get("attachments") if meta_data else None
+    )
+    auto = discover_pdf_attachments(midi_path)
+    return merge_attachment_lists([manual, auto])
+
+
 def derive_collection_title(subpath: str) -> str:
     if not subpath:
         return "King Midis"
@@ -190,6 +235,8 @@ def build_meta_context(midi_path: Path, meta_data: dict | None, rel_path: str) -
     else:
         tags_list = []
 
+    attachments = collect_attachment_candidates(midi_path, meta_data)
+
     lines = [f"{display_name} by {composer}"]
     if editor:
         lines.append(f"Edited by {editor}")
@@ -208,6 +255,7 @@ def build_meta_context(midi_path: Path, meta_data: dict | None, rel_path: str) -
         "license": meta_data.get("license") or meta_data.get("liscense") or "Public Domain",
         "instrument": instrument_choice,
         "bpm": meta_data.get("bpm") or meta_data.get("tempo") or "",
+        "attachments": attachments,
         "genre": genre_value,
         "tags": ", ".join(tags_list),
     }
@@ -231,6 +279,7 @@ def build_meta_context(midi_path: Path, meta_data: dict | None, rel_path: str) -
         "instrument_label": preset["label"],
         "genre": genre_value,
         "tags": tags_list,
+        "attachments": attachments,
     }
 
 
@@ -260,14 +309,38 @@ def is_midi_file(path: Path) -> bool:
     return path.is_file() and path.suffix.lower() in MIDI_EXTENSIONS
 
 
-def rename_sidecars(original_path: Path, new_stem: str):
+def rename_sidecars(original_path: Path, new_stem: str, attachments: list[str] | None = None) -> list[str]:
     for suffix in META_SUFFIXES + [SHEET_SUFFIX]:
         old_path = original_path.with_suffix(suffix)
         if old_path.exists() and old_path.is_file():
             old_path.rename(old_path.with_name(new_stem + suffix))
 
+    updated_attachments: list[str] = []
+    attachments = attachments or []
+    parent = original_path.parent
+    for rel_path in attachments:
+        old_file = parent / rel_path
+        if not old_file.exists() or not old_file.is_file():
+            updated_attachments.append(rel_path)
+            continue
+        if rel_path.startswith(original_path.stem):
+            new_name = new_stem + rel_path[len(original_path.stem):]
+        else:
+            new_name = rel_path
+        if new_name != rel_path:
+            old_file.rename(parent / new_name)
+        updated_attachments.append(new_name)
 
-def locate_sheet_path(midi_path: Path) -> Path | None:
+    return updated_attachments
+
+
+def locate_sheet_path(midi_path: Path, attachments: list[str] | None = None) -> Path | None:
+    attachments = attachments or []
+    for rel in attachments:
+        candidate = midi_path.parent / rel
+        if candidate.exists() and candidate.suffix.lower() == SHEET_SUFFIX:
+            return candidate
+
     base = midi_path.with_suffix(SHEET_SUFFIX)
     if base.exists():
         return base
@@ -732,7 +805,8 @@ def browse(subpath: str):
             entry["instrument_icon"] = meta_context["instrument_icon"]
             entry["instrument_id"] = meta_context["form_defaults"].get(
                 "instrument", DEFAULT_INSTRUMENT_ID)
-            sheet_path = locate_sheet_path(child)
+            attachments = meta_context.get("attachments") or []
+            sheet_path = locate_sheet_path(child, attachments)
             entry["sheet_rel_path"] = str(
                 sheet_path.relative_to(BASE_DIR)) if sheet_path else None
         else:
@@ -801,6 +875,11 @@ def update_entry():
     except ValueError as exc:
         return jsonify({"error": str(exc)}), 400
 
+    attachments_value = normalize_attachment_list(metadata.get("attachments"))
+    attachments_value = merge_attachment_lists(
+        [attachments_value, discover_pdf_attachments(midi_path)]
+    )
+
     updated_path = midi_path
     if sanitized_slug != midi_path.stem:
         target_path = midi_path.with_name(sanitized_slug + midi_path.suffix)
@@ -808,8 +887,13 @@ def update_entry():
             return jsonify({"error": "A file with that name already exists"}), 400
         old_path = midi_path
         midi_path.rename(target_path)
-        rename_sidecars(old_path, sanitized_slug)
+        attachments_value = rename_sidecars(
+            old_path, sanitized_slug, attachments_value
+        )
         updated_path = target_path
+    attachments_value = merge_attachment_lists(
+        [attachments_value, discover_pdf_attachments(updated_path)]
+    )
 
     instrument_choice = normalize_instrument_choice(metadata.get("instrument"))
 
@@ -850,6 +934,8 @@ def update_entry():
                      for tag in tags_value if str(tag).strip()]
     if tags_list:
         meta_payload["tags"] = tags_list
+    if attachments_value:
+        meta_payload["attachments"] = attachments_value
 
     meta_path = meta_path_for_write(updated_path)
     meta_path.write_text(
@@ -938,7 +1024,7 @@ def ai_suggest_metadata():
     result = {
         "name": suggestion.get("name", ""),
         "composer": suggestion.get("composer") or working_meta.get("composer", ""),
-        "bpm": bpm_value,
+        "bpm": bpm_value if (bpm_value and bpm_value > 0) else None,
         "genre": suggestion.get("genre", ""),
         "tags": tags_list,
     }

@@ -48,7 +48,14 @@ main.container {
 .header-brand {
   display: flex;
   align-items: center;
+  justify-content: flex-start;
   gap: 0.9rem;
+}
+
+.brand-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .brand-logo {
@@ -257,12 +264,10 @@ main.container {
 }
 
 .meta-summary::marker,
-.meta-summary::-webkit-details-marker {
-  display: none;
+.meta-summary::-webkit-details-marker,
+summary::marker,
+summary::-webkit-details-marker {
   content: "";
-}
-
-.meta-details summary::-webkit-details-marker {
   display: none;
 }
 

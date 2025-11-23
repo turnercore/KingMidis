@@ -20,9 +20,14 @@
     <body>
         <main class="container">
             <header class="page-header">
-                <div>
-                    <p class="eyebrow">Admin</p>
-                    <h1>Control Room</h1>
+                <div class="header-brand">
+                    <a href="{{ url_for('browse') }}" class="brand-link" aria-label="King Midis home">
+                        <img src="{{ url_for('static', filename='images/logo.png') }}" alt="King Midis logo" class="brand-logo" />
+                    </a>
+                    <div>
+                        <p class="eyebrow">Admin</p>
+                        <h1>Control Room</h1>
+                    </div>
                 </div>
 
                 <div class="header-actions">
