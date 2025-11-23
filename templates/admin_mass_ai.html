@@ -101,6 +101,7 @@
                 const logOutput = document.getElementById("massAiLog");
                 const initialStatus = {{ status|tojson }};
                 let currentLog = initialStatus.log ? [...initialStatus.log] : [];
+                let runningFolders = new Set(initialStatus.folders || []);
                 const renderLog = (entries) => {
                     if (!logOutput) return;
                     if (!entries || !entries.length) {
@@ -142,29 +143,24 @@
                     updateTheme(active === "dark" ? "light" : "dark");
                 });
 
-                const setRunningState = (activeLi) => {
+                const updateRunningButtons = () => {
                     brainButtons.forEach((btn) => {
-                        if (activeLi && btn.closest("li") === activeLi) {
+                        const folder = btn.dataset.folder;
+                        if (runningFolders.has(folder)) {
                             btn.classList.add("running");
-                            btn.classList.remove("disabled");
-                        } else if (activeLi) {
-                            btn.classList.add("disabled");
-                            btn.classList.remove("running");
                         } else {
-                            btn.classList.remove("running", "disabled");
+                            btn.classList.remove("running");
                         }
                     });
                 };
 
-                const liForFolder = (folder) => {
-                    return (
-                        Array.from(brainButtons)
-                            .map((btn) => btn.closest("li"))
-                            .find((li) => {
-                                const btn = li.querySelector(".ai-run-btn");
-                                return btn && btn.dataset.folder === folder;
-                            }) || null
-                    );
+                const formatRunningStatus = () => {
+                    if (!runningFolders.size) return "Idle.";
+                    if (runningFolders.size === 1) {
+                        const folder = Array.from(runningFolders)[0];
+                        return `Running AI for ${folder}…`;
+                    }
+                    return `Running AI for ${runningFolders.size} folders…`;
                 };
 
                 brainButtons.forEach((btn) => {
@@ -172,10 +168,9 @@
                         const folder = btn.dataset.folder;
                         if (btn.classList.contains("running")) {
                             await fetch("/admin/mass-ai/cancel", { method: "POST" });
+                            runningFolders.clear();
+                            updateRunningButtons();
                             if (statusEl) statusEl.textContent = "Cancelling…";
-                            return;
-                        }
-                        if (btn.classList.contains("disabled")) {
                             return;
                         }
                         const response = await fetch("/admin/mass-ai/start", {
@@ -188,8 +183,9 @@
                             alert(body.error || "Unable to start Mass AI.");
                             return;
                         }
-                        setRunningState(btn.closest("li"));
-                        if (statusEl) statusEl.textContent = `Running AI for ${folder}…`;
+                        runningFolders.add(folder);
+                        updateRunningButtons();
+                        if (statusEl) statusEl.textContent = formatRunningStatus();
                         if (logOutput) {
                             if (!logOutput.textContent) {
                                 logOutput.textContent = "";
@@ -206,28 +202,27 @@
                     });
                 });
 
-                if (initialStatus.running) {
-                    if (statusEl) statusEl.textContent = `Running AI for ${initialStatus.folder}…`;
-                    setRunningState(liForFolder(initialStatus.folder));
-                } else {
-                    setRunningState(null);
-                    if (statusEl) statusEl.textContent = "Idle.";
-                }
+                if (statusEl) statusEl.textContent = formatRunningStatus();
+                updateRunningButtons();
                 renderLog(currentLog);
                 const pollStatus = async () => {
                     try {
                         const res = await fetch("/admin/mass-ai/status", { cache: "no-store" });
                         const payload = await res.json();
-                        if (payload.running) {
-                            if (statusEl) statusEl.textContent = `Running AI for ${payload.folder}…`;
-                            setRunningState(liForFolder(payload.folder));
+                        if (payload.folders && payload.folders.length) {
+                            runningFolders = new Set(payload.folders);
+                            if (statusEl) statusEl.textContent = formatRunningStatus();
+                            if (typeof window.kmLogoSetThinking === "function") {
+                                window.kmLogoSetThinking(true);
+                            }
                         } else {
-                            setRunningState(null);
+                            runningFolders.clear();
                             if (statusEl) statusEl.textContent = "Idle.";
                             if (typeof window.kmLogoSetThinking === "function") {
                                 window.kmLogoSetThinking(false);
                             }
                         }
+                        updateRunningButtons();
                         appendLogEntries(payload.log);
                     } catch (err) {
                         console.error(err);
