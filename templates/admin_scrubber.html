@@ -46,9 +46,25 @@
                         />
                     </label>
 
+                    <label>
+                        Source
+                        <select name="source">
+                            {% for src in sources %}
+                            <option value="{{ src.id }}" {% if source == src.id %}selected{% endif %}>
+                                {{ src.label }}
+                            </option>
+                            {% endfor %}
+                        </select>
+                    </label>
+
                     <label class="checkbox-field">
                         <input type="checkbox" name="download_pdf" {% if download_pdf %}checked{% endif %} />
                         <span>Download sheet music (PDF) when available</span>
+                    </label>
+
+                    <label class="checkbox-field">
+                        <input type="checkbox" name="test_mode" {% if test_mode %}checked{% endif %} />
+                        <span>Run limited test (3 entries)</span>
                     </label>
 
                     <div class="modal-actions">
@@ -75,6 +91,15 @@
                     </li>
                     {% endfor %}
                 </ul>
+            </section>
+            {% endif %}
+
+            {% if logs %}
+            <section class="list-card">
+                <header>
+                    <h2>Log</h2>
+                </header>
+                <pre class="log-output">{% for line in logs %}{{ line }}&#10;{% endfor %}</pre>
             </section>
             {% endif %}
         </main>

@@ -59,6 +59,49 @@ const INSTRUMENT_PRESETS = {
                 envelope: { attack: 0.01, decay: 0.4, sustain: 0.3, release: 1.2 },
             }).toDestination(),
     },
+    harp: {
+        label: "Harp",
+        create: () =>
+            new Tone.PolySynth(Tone.PluckSynth, {
+                dampening: 3000,
+                resonance: 0.7,
+            }).toDestination(),
+    },
+    brass: {
+        label: "Brass",
+        create: () =>
+            new Tone.PolySynth(Tone.FMSynth, {
+                harmonicity: 2,
+                modulationIndex: 20,
+                envelope: { attack: 0.05, decay: 0.7, sustain: 0.6, release: 1.5 },
+                modulation: { type: "square" },
+            }).toDestination(),
+    },
+    voice: {
+        label: "Choir",
+        create: () =>
+            new Tone.PolySynth(Tone.Synth, {
+                oscillator: { type: "sine" },
+                envelope: { attack: 0.3, decay: 0.4, sustain: 0.8, release: 2.5 },
+                filterEnvelope: {
+                    attack: 0.2,
+                    decay: 0.4,
+                    sustain: 0.7,
+                    release: 2,
+                    baseFrequency: 200,
+                    octaves: 3,
+                },
+            }).toDestination(),
+    },
+    organ: {
+        label: "Organ",
+        create: () =>
+            new Tone.PolySynth(Tone.Synth, {
+                oscillator: { type: "square" },
+                envelope: { attack: 0.05, decay: 0.3, sustain: 0.8, release: 1.5 },
+                filter: { type: "lowpass", frequency: 6000 },
+            }).toDestination(),
+    },
 };
 let currentInstrumentId = null;
 
@@ -242,6 +285,7 @@ function applyInstrumentSelection(presetId, { persist = true } = {}) {
 function initInstrumentControls() {
     if (!instrumentButtons.length) return;
 
+    let closeDropdown = () => {};
     const initial = readStoredInstrument();
     currentInstrumentId = initial;
     instrumentButtons.forEach((btn) => {
@@ -249,19 +293,41 @@ function initInstrumentControls() {
         btn.addEventListener("click", () => {
             applyInstrumentSelection(btn.dataset.instrument);
             if (instrumentDropdown && !instrumentDropdown.classList.contains("hidden")) {
-                instrumentDropdown.classList.add("hidden");
-                if (moreToggleBtn) {
-                    moreToggleBtn.setAttribute("aria-expanded", "false");
-                }
+                closeDropdown();
             }
         });
     });
 
     if (moreToggleBtn && instrumentDropdown) {
-        moreToggleBtn.addEventListener("click", () => {
+        let outsideHandler = null;
+        closeDropdown = () => {
+            instrumentDropdown.classList.add("hidden");
+            moreToggleBtn.setAttribute("aria-expanded", "false");
+            if (outsideHandler) {
+                document.removeEventListener("click", outsideHandler);
+                outsideHandler = null;
+            }
+        };
+
+        moreToggleBtn.addEventListener("click", (event) => {
+            event.stopPropagation();
             const isOpen = !instrumentDropdown.classList.contains("hidden");
             instrumentDropdown.classList.toggle("hidden", isOpen);
             moreToggleBtn.setAttribute("aria-expanded", String(!isOpen));
+            if (!isOpen) {
+                outsideHandler = (evt) => {
+                    if (
+                        instrumentDropdown.contains(evt.target) ||
+                        evt.target === moreToggleBtn
+                    ) {
+                        return;
+                    }
+                    closeDropdown();
+                };
+                document.addEventListener("click", outsideHandler);
+            } else {
+                closeDropdown();
+            }
         });
     }
 }
@@ -274,7 +340,9 @@ function initAdminEditor() {
     const closeBtn = document.getElementById("adminClose");
     const cancelBtn = document.getElementById("adminCancel");
     const quickSaveBtn = document.getElementById("adminQuickSave");
+    const aiBtn = document.getElementById("adminAI");
     const statusEl = document.getElementById("adminStatus");
+    const saveBtn = form.querySelector('button[type="submit"]');
 
     const relInput = document.getElementById("entryRelPath");
     const slugInput = document.getElementById("entrySlug");
@@ -286,12 +354,38 @@ function initAdminEditor() {
         source: document.getElementById("entrySource"),
         license: document.getElementById("entryLicense"),
         instrument: document.getElementById("entryInstrument"),
+        genre: document.getElementById("entryGenre"),
+        tags: document.getElementById("entryTags"),
         bpm: document.getElementById("entryBpm"),
     };
+
+    const setAiState = (running) => {
+        if (aiBtn) {
+            aiBtn.disabled = running;
+            aiBtn.classList.toggle("loading", running);
+            aiBtn.textContent = running ? "🧠" : "🤖";
+        }
+        if (quickSaveBtn) quickSaveBtn.disabled = running;
+        if (saveBtn) saveBtn.disabled = running;
+    };
+
+    const collectMetadata = () => ({
+        name: fields.name.value,
+        composer: fields.composer.value,
+        editor: fields.editor.value,
+        modified_by: fields.modified_by.value,
+        source: fields.source.value,
+        license: fields.license.value,
+        instrument: fields.instrument.value,
+        bpm: fields.bpm.value,
+        genre: fields.genre.value,
+        tags: fields.tags.value,
+    });
 
     const hideModal = () => {
         modal.classList.add("hidden");
         statusEl.textContent = "";
+        setAiState(false);
     };
 
     const showModal = (button) => {
@@ -314,8 +408,11 @@ function initAdminEditor() {
         fields.license.value = metaDefaults.license || "Public Domain";
         fields.instrument.value = button.dataset.instrument || metaDefaults.instrument || "piano";
         fields.bpm.value = metaDefaults.bpm || "";
+        fields.genre.value = metaDefaults.genre || "";
+        fields.tags.value = metaDefaults.tags || "";
 
         statusEl.textContent = "";
+        setAiState(false);
         modal.classList.remove("hidden");
     };
 
@@ -347,16 +444,7 @@ function initAdminEditor() {
         const payload = {
             rel_path: relInput.value,
             new_slug: slugInput.value,
-            metadata: {
-                name: fields.name.value,
-                composer: fields.composer.value,
-                editor: fields.editor.value,
-                modified_by: fields.modified_by.value,
-                source: fields.source.value,
-                license: fields.license.value,
-                instrument: fields.instrument.value,
-                bpm: fields.bpm.value,
-            },
+            metadata: collectMetadata(),
         };
 
         try {
@@ -380,6 +468,56 @@ function initAdminEditor() {
             statusEl.textContent = error.message || "Unable to save changes";
         }
     });
+
+    if (aiBtn) {
+        aiBtn.addEventListener("click", async () => {
+            if (!relInput.value) return;
+            setAiState(true);
+            statusEl.textContent = "Generating suggestions…";
+
+            const payload = {
+                rel_path: relInput.value,
+                metadata: collectMetadata(),
+            };
+
+            try {
+                const response = await fetch("/api/entry/ai-suggest", {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json",
+                    },
+                    body: JSON.stringify(payload),
+                });
+                const body = await response.json().catch(() => ({}));
+                if (!response.ok) {
+                    throw new Error(body.error || "AI request failed");
+                }
+
+                const suggestion = body.suggestion || {};
+                if (suggestion.name) fields.name.value = suggestion.name;
+                if (suggestion.composer) fields.composer.value = suggestion.composer;
+                if (typeof suggestion.bpm === "number") {
+                    fields.bpm.value = Math.round(suggestion.bpm);
+                }
+                if (suggestion.genre !== undefined) {
+                    fields.genre.value = suggestion.genre || "";
+                }
+                if (suggestion.tags) {
+                    if (Array.isArray(suggestion.tags)) {
+                        fields.tags.value = suggestion.tags.join(", ");
+                    } else if (typeof suggestion.tags === "string") {
+                        fields.tags.value = suggestion.tags;
+                    }
+                }
+                statusEl.textContent = "AI suggestions applied — review before saving.";
+            } catch (error) {
+                console.error(error);
+                statusEl.textContent = error.message || "AI request failed";
+            } finally {
+                setAiState(false);
+            }
+        });
+    }
 }
 
 
@@ -514,17 +652,24 @@ function enablePlayerControls() {
     if (progressSlider) progressSlider.disabled = midiDuration <= 0;
 }
 
-function collectEvents(midi) {
+function collectEvents(midi, timeScale = 1) {
     const events = [];
     midi.tracks.forEach((track) => {
-        track.notes.forEach((note) => events.push(note));
+        track.notes.forEach((note) =>
+            events.push({
+                time: note.time * timeScale,
+                duration: note.duration * timeScale,
+                name: note.name,
+                velocity: note.velocity,
+            })
+        );
     });
     return events;
 }
 
-function calcMidiDuration(midi) {
+function calcMidiDuration(midi, timeScale = 1) {
     if (Number.isFinite(midi.duration) && midi.duration > 0) {
-        return midi.duration;
+        return midi.duration * timeScale;
     }
 
     let maxTime = 0;
@@ -534,7 +679,7 @@ function calcMidiDuration(midi) {
         });
     });
 
-    return maxTime;
+    return maxTime * timeScale;
 }
 
 async function loadAndPlayMidi(url, name, btn) {
@@ -566,11 +711,12 @@ async function loadAndPlayMidi(url, name, btn) {
                 bpmOverride = parsed;
             }
         }
-        Tone.Transport.bpm.value =
-            bpmOverride ??
-            (tempoEvent && tempoEvent.bpm ? tempoEvent.bpm : 120);
+        const baseBpm = tempoEvent && tempoEvent.bpm ? tempoEvent.bpm : 120;
+        const targetBpm = bpmOverride || baseBpm;
+        const timeScale = baseBpm && bpmOverride ? baseBpm / bpmOverride : 1;
+        Tone.Transport.bpm.value = targetBpm;
 
-        midiDuration = calcMidiDuration(midi);
+        midiDuration = calcMidiDuration(midi, timeScale);
         if (totalTimeEl) totalTimeEl.textContent = formatTime(midiDuration);
 
         const desiredInstrument =
@@ -582,7 +728,7 @@ async function loadAndPlayMidi(url, name, btn) {
         }
 
         currentSynth = createSynthForPreset(currentInstrumentId);
-        const events = collectEvents(midi);
+        const events = collectEvents(midi, timeScale);
 
         currentPart = new Tone.Part((time, note) => {
             currentSynth.triggerAttackRelease(note.name, note.duration, time, note.velocity);

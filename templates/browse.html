@@ -3,7 +3,7 @@
     <head>
         <meta charset="utf-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
-        <title>MIDI Browser</title>
+        <title>King Midis</title>
 
         <script>
             (function () {
@@ -74,7 +74,8 @@
                                 {% if e.meta.has_meta %}
                                 <details class="meta-details">
                                     <summary class="meta-summary">
-                                        <span class="file-license">{{ e.meta.license }}</span>
+                                        <span class="meta-summary__label">{{ e.meta.license }}</span>
+                                        <span class="meta-summary__chevron" aria-hidden="true">⌄</span>
                                     </summary>
 
                                     <div class="meta-panel">
@@ -110,13 +111,27 @@
                                             </div>
                                             {% endif %}
 
-                                            {% if e.meta.instruments %}
-                                            <div>
-                                                <p class="meta-label">Instruments</p>
-                                                <p>{{ e.meta.instruments | join(", ") }}</p>
-                                            </div>
-                                            {% endif %}
+                                        {% if e.meta.instruments %}
+                                        <div>
+                                            <p class="meta-label">Instruments</p>
+                                            <p>{{ e.meta.instruments | join(", ") }}</p>
                                         </div>
+                                        {% endif %}
+
+                                        {% if e.meta.genre %}
+                                        <div>
+                                            <p class="meta-label">Genre</p>
+                                            <p>{{ e.meta.genre }}</p>
+                                        </div>
+                                        {% endif %}
+
+                                        {% if e.meta.tags %}
+                                        <div>
+                                            <p class="meta-label">Tags</p>
+                                            <p>{{ e.meta.tags | join(", ") }}</p>
+                                        </div>
+                                        {% endif %}
+                                    </div>
 
                                         <div class="meta-footer">
                                             <span class="meta-license">Licensed under {{ e.meta.license }}</span>
@@ -132,7 +147,7 @@
                                     </div>
                                 </details>
                                 {% else %}
-                                <span class="file-license">{{ e.meta.license }}</span>
+                                <span class="file-license pill">{{ e.meta.license }}</span>
                                 {% endif %}
                             </div>
 
@@ -271,9 +286,11 @@
                 <div class="admin-modal__header">
                     <h3>Edit Listing</h3>
                     <div class="admin-header-actions">
+                        {% if openai_enabled %}
                         <button type="button" id="adminAI" class="admin-ai icon-btn" title="AI assist">
                             🤖
                         </button>
+                        {% endif %}
                         <button type="button" id="adminQuickSave" class="admin-save icon-btn" title="Save">
                             💾
                         </button>
@@ -326,6 +343,16 @@
                             <option value="{{ preset.id }}">{{ preset.label }}</option>
                             {% endfor %}
                         </select>
+                    </label>
+
+                    <label>
+                        Genre
+                        <input type="text" name="genre" id="entryGenre" />
+                    </label>
+
+                    <label>
+                        Tags (comma separated)
+                        <input type="text" name="tags" id="entryTags" />
                     </label>
 
                     <label>

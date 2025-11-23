@@ -150,11 +150,46 @@ main.container {
   color: var(--text-subtle);
 }
 
+.file-license.pill,
+.meta-summary {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.2rem 0.85rem;
+  border-radius: 999px;
+  border: 1px solid var(--border-color);
+  background: rgba(255, 255, 255, 0.04);
+  font-size: 0.85rem;
+  cursor: pointer;
+  transition: border 0.2s ease, background 0.2s ease, color 0.2s ease;
+}
+
+.file-license.pill {
+  cursor: default;
+}
+
+.meta-details[open] .meta-summary,
+.meta-summary:hover {
+  border-color: var(--accent);
+  color: #fff;
+}
+
+.meta-summary__chevron {
+  font-size: 0.9rem;
+  transition: transform 0.2s ease;
+  display: inline-flex;
+}
+
+.meta-details[open] .meta-summary__chevron {
+  transform: rotate(180deg);
+}
+
 .file-actions {
   display: flex;
   align-items: center;
   gap: 0.45rem;
   margin-left: auto;
+  align-self: flex-start;
 }
 
 .icon-btn {
@@ -194,8 +229,8 @@ main.container {
 }
 
 .icon-btn.edit-btn {
-  border-style: solid;
-  border-color: rgba(255, 255, 255, 0.18);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  background: rgba(255, 255, 255, 0.08);
 }
 
 .meta-details {
@@ -206,26 +241,6 @@ main.container {
 
 .meta-summary {
   list-style: none;
-  display: inline-flex;
-  align-items: center;
-  gap: 0.35rem;
-  cursor: pointer;
-  padding: 0.2rem 0;
-  border-radius: 0.4rem;
-  color: var(--text-subtle);
-  background: transparent;
-  border: none;
-}
-
-.meta-summary::after {
-  content: "⌄";
-  font-size: 0.8rem;
-  opacity: 0.6;
-  transition: transform 0.2s ease;
-}
-
-.meta-details[open] .meta-summary::after {
-  transform: rotate(180deg);
 }
 
 .meta-details summary::-webkit-details-marker {
@@ -407,7 +422,7 @@ main.container {
 .player-volume input[type="range"] {
   appearance: none;
   width: 30px;
-  height: 90px;
+  height: 55px;
   border-radius: 999px;
   background: rgba(255, 255, 255, 0.12);
   outline: none;
@@ -472,6 +487,8 @@ main.container {
 
 .instrument-more {
   position: relative;
+  display: flex;
+  align-items: center;
 }
 
 .more-toggle {
@@ -480,7 +497,7 @@ main.container {
 
 .instrument-dropdown {
   position: absolute;
-  top: 110%;
+  bottom: 110%;
   right: 0;
   display: flex;
   gap: 0.35rem;
@@ -491,6 +508,7 @@ main.container {
   border: 1px solid rgba(255, 255, 255, 0.15);
   box-shadow: 0 12px 25px rgba(0, 0, 0, 0.4);
   min-width: 180px;
+  z-index: 5;
 }
 
 .instrument-dropdown.hidden {
@@ -605,6 +623,17 @@ main.container {
 .admin-status {
   font-size: 0.85rem;
   margin-top: 0.5rem;
+}
+
+.log-output {
+  max-height: 320px;
+  overflow-y: auto;
+  background: rgba(0, 0, 0, 0.3);
+  border-radius: 0.9rem;
+  padding: 1rem;
+  font-family: "SFMono-Regular", Consolas, monospace;
+  font-size: 0.8rem;
+  border: 1px solid rgba(255, 255, 255, 0.1);
 }
 
 @media (max-width: 720px) {

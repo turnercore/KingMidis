@@ -5,6 +5,17 @@
         <meta name="viewport" content="width=device-width, initial-scale=1" />
         <title>Admin — King Midis</title>
         <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}" />
+        <script>
+            (function () {
+                try {
+                    const stored = localStorage.getItem("km-theme");
+                    const preferred = stored || "dark";
+                    document.documentElement.setAttribute("data-theme", preferred);
+                } catch (err) {
+                    document.documentElement.setAttribute("data-theme", "dark");
+                }
+            })();
+        </script>
     </head>
     <body>
         <main class="container">
