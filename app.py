@@ -1416,17 +1416,18 @@ def mass_ai_process_folder(folder: Path, log_lines: list[str], cancel_event=None
             rel_path = str(midi.relative_to(BASE_DIR))
         except ValueError:
             rel_path = midi.name
-            context_blob = {
-                "file_name": midi.name,
-                "folder": midi.parent.name,
-                "metadata": {
-                    "name": meta.get("name", ""),
-                    "composer": meta.get("composer", ""),
-                    "bpm": meta.get("bpm", ""),
-                    "genre": meta.get("genre", ""),
-                    "tags": meta.get("tags", []),
-                },
-            }
+        context_blob = {
+            "file_name": midi.name,
+            "folder": midi.parent.name,
+            "rel_path": rel_path,
+            "metadata": {
+                "name": meta.get("name", ""),
+                "composer": meta.get("composer", ""),
+                "bpm": meta.get("bpm", ""),
+                "genre": meta.get("genre", ""),
+                "tags": meta.get("tags", []),
+            },
+        }
         message = f"Running AI for {midi.name}"
         print(f"[MassAI] {message}")
         log_lines.append(message)

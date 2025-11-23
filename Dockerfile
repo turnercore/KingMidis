@@ -1,10 +1,20 @@
-# Devcontainer base image with Python and common tools
-FROM mcr.microsoft.com/devcontainers/python:3.12
+FROM python:3.12-slim
 
-# Optional: extra tools for convenience
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    git curl \
-    && rm -rf /var/lib/apt/lists/*
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1
 
-# VS Code will mount the repo at /workspaces/kingmidis by default
-WORKDIR /workspaces/KingMidis
+WORKDIR /app
+
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+COPY . .
+
+ENV MIDI_ROOT=/midis \
+    FLASK_ENV=production
+
+EXPOSE 8000
+
+VOLUME ["/midis"]
+
+CMD ["gunicorn", "--bind", "0.0.0.0:8000", "app:app"]

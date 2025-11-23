@@ -1,0 +1,15 @@
+version: "3.9"
+
+services:
+  kingmidis:
+    build: .
+    container_name: kingmidis
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./midis:/midis
+    env_file:
+      - .env
+    environment:
+      - MIDI_ROOT=/midis
