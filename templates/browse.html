@@ -1,55 +1,331 @@
 <!DOCTYPE html>
-<html>
+<html lang="en" data-theme="dark">
     <head>
         <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
         <title>MIDI Browser</title>
 
+        <script>
+            (function () {
+                try {
+                    const stored = localStorage.getItem("km-theme");
+                    const preferred = stored || "dark";
+                    document.documentElement.setAttribute("data-theme", preferred);
+                } catch (err) {
+                    document.documentElement.setAttribute("data-theme", "dark");
+                }
+            })();
+        </script>
+        <link
+            rel="stylesheet"
+            href="https://unpkg.com/@picocss/pico@2.0.0-rc1/css/pico.min.css"
+        />
         <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}" />
     </head>
-    <body>
-        <h1>MIDI Browser</h1>
+    <body data-admin="{{ 'true' if admin_mode else 'false' }}">
+        <main class="container">
+            <header class="page-header">
+                <div>
+                    <p class="eyebrow">Collection</p>
+                    <h1>MIDI Browser</h1>
+                </div>
 
-        <div class="path">
-            Current path:
-            <code>/{{ subpath if subpath else '' }}</code>
+                <button id="themeToggle" class="contrast" aria-label="Switch theme">
+                    🌙
+                </button>
+            </header>
+
+            <section class="path-card">
+                <small>Current path</small>
+                <code>/{{ subpath if subpath else '' }}</code>
+                {% if parent_rel is not none %}
+                <a class="secondary" href="{{ url_for('browse', subpath=parent_rel) }}"
+                    >⬅ Up one level</a
+                >
+                {% endif %}
+            </section>
+
+            <section class="list-card">
+                <header>
+                    <h2>Contents</h2>
+                </header>
+
+                <ul class="file-list">
+                    {% for e in entries %} {% if e.is_dir %}
+                    <li class="dir">
+                        <span class="file-label">📁 {{ e.name }}/</span>
+                        <a href="{{ url_for('browse', subpath=e.rel_path) }}" role="button"
+                            >Open</a
+                        >
+                    </li>
+
+                    {% elif e.is_midi %}
+                    <li class="midi">
+                        <div class="file-content">
+                            <div class="file-text">
+                                <span class="file-label">{{ e.instrument_icon }} {{ e.display_name }}</span>
+                                <span class="file-license">{{ e.meta.license }}</span>
+                            </div>
+
+                            <div class="file-actions">
+                                <button
+                                    class="play-btn"
+                                    data-midi-url="{{ url_for('midi_file', subpath=e.rel_path) }}"
+                                    data-midi-name="{{ e.display_name }}"
+                                >
+                                    ▶ <span class="sr-only">Preview</span>
+                                </button>
+
+                                <a
+                                    class="download-btn"
+                                    href="{{ url_for('midi_file', subpath=e.rel_path) }}"
+                                    download="{{ e.name }}"
+                                >
+                                    ⬇ <span class="sr-only">Download MIDI</span>
+                                </a>
+
+                                {% if e.sheet_rel_path %}
+                                <a
+                                    class="download-btn sheet-btn"
+                                    href="{{ url_for('attachment_file', subpath=e.sheet_rel_path) }}"
+                                    download
+                                >
+                                    📜 <span class="sr-only">Download sheet music</span>
+                                </a>
+                                {% endif %}
+
+                                {% if admin_mode %}
+                                <button
+                                    type="button"
+                                    class="edit-btn"
+                                    data-rel-path="{{ e.rel_path }}"
+                                    data-slug="{{ e.slug }}"
+                                    data-meta='{{ e.meta.form_defaults | tojson | safe }}'
+                                >
+                                    ✏️ <span class="sr-only">Edit entry</span>
+                                </button>
+                                {% endif %}
+                            </div>
+                        </div>
+
+                        {% if e.meta.has_meta %}
+                        <details class="meta-details">
+                            <summary>View attribution & instrumentation</summary>
+
+                            <div class="meta-grid">
+                                <div>
+                                    <p class="meta-label">Title</p>
+                                    <p>{{ e.meta.display_name }}</p>
+                                </div>
+
+                                <div>
+                                    <p class="meta-label">Composer</p>
+                                    <p>{{ e.meta.composer }}</p>
+                                </div>
+
+                                {% if e.meta.editor %}
+                                <div>
+                                    <p class="meta-label">Editor</p>
+                                    <p>{{ e.meta.editor }}</p>
+                                </div>
+                                {% endif %}
+
+                                {% if e.meta.modified_by %}
+                                <div>
+                                    <p class="meta-label">Modified by</p>
+                                    <p>{{ e.meta.modified_by }}</p>
+                                </div>
+                                {% endif %}
+
+                                {% if e.meta.source %}
+                                <div>
+                                    <p class="meta-label">Source</p>
+                                    <p>{{ e.meta.source }}</p>
+                                </div>
+                                {% endif %}
+
+                                {% if e.meta.instruments %}
+                                <div>
+                                    <p class="meta-label">Instruments</p>
+                                    <p>{{ e.meta.instruments | join(", ") }}</p>
+                                </div>
+                                {% endif %}
+                            </div>
+
+                            <div class="meta-footer">
+                                <span class="meta-license">Licensed under {{ e.meta.license }}</span>
+
+                                <button
+                                    type="button"
+                                    class="copy-meta-btn"
+                                    data-attribution="{{ e.meta.attribution_text | e }}"
+                                >
+                                    Copy attribution
+                                </button>
+                            </div>
+                        </details>
+                        {% endif %}
+                    </li>
+
+                    {% else %}
+                    <li class="file">
+                        <span class="file-label">📄 {{ e.name }}</span>
+                        <span class="muted">Unsupported</span>
+                    </li>
+                    {% endif %} {% endfor %}
+                </ul>
+            </section>
+        </main>
+
+        <div id="playerBar" class="player-bar hidden">
+            <button id="playPauseBtn" class="player-btn" disabled>▶</button>
+
+            <div class="player-info">
+                <div id="playerTitle" class="player-title">Select a MIDI file to preview</div>
+                <div id="status" class="player-status">Idle</div>
+
+                <div class="player-progress">
+                    <span id="currentTime">0:00</span>
+
+                    <input
+                        type="range"
+                        id="progressSlider"
+                        min="0"
+                        max="1000"
+                        value="0"
+                        disabled
+                    />
+
+                    <span id="totalTime">0:00</span>
+                </div>
+            </div>
+
+            <div class="player-volume" role="group" aria-label="Volume">
+                <input
+                    type="range"
+                    id="volumeSlider"
+                    min="0"
+                    max="100"
+                    value="80"
+                    aria-label="Volume"
+                />
+                <span class="volume-icon" aria-hidden="true">🔊</span>
+                <span id="volumeLabel" class="sr-only">80%</span>
+            </div>
         </div>
 
-        {% if parent_rel is not none %}
-        <div class="nav-up">
-            <a href="{{ url_for('browse', subpath=parent_rel) }}">⬅ Up one level</a>
+        {% if admin_mode %}
+        <div id="adminModal" class="admin-modal hidden">
+            <div class="admin-modal__dialog">
+                <div class="admin-modal__header">
+                    <h3>Edit Listing</h3>
+                    <button type="button" id="adminClose" class="admin-close">✕</button>
+                </div>
+
+                <form id="adminForm" class="admin-form">
+                    <input type="hidden" name="rel_path" id="entryRelPath" />
+
+                    <label>
+                        Display filename
+                        <input type="text" name="new_slug" id="entrySlug" required />
+                    </label>
+
+                    <label>
+                        Title
+                        <input type="text" name="name" id="entryName" />
+                    </label>
+
+                    <label>
+                        Composer
+                        <input type="text" name="composer" id="entryComposer" />
+                    </label>
+
+                    <label>
+                        Editor
+                        <input type="text" name="editor" id="entryEditor" />
+                    </label>
+
+                    <label>
+                        Modified by
+                        <input type="text" name="modified_by" id="entryModifier" />
+                    </label>
+
+                    <label>
+                        Source
+                        <input type="text" name="source" id="entrySource" />
+                    </label>
+
+                    <label>
+                        License
+                        <input type="text" name="license" id="entryLicense" />
+                    </label>
+
+                    <label>
+                        Instruments (comma separated)
+                        <input type="text" name="instruments" id="entryInstruments" />
+                    </label>
+
+                    <div class="modal-actions">
+                        <button type="button" id="adminCancel" class="secondary">Cancel</button>
+                        <button type="submit" class="contrast">Save</button>
+                    </div>
+
+                    <p id="adminStatus" class="admin-status"></p>
+                </form>
+            </div>
         </div>
         {% endif %}
 
-        <ul class="file-list">
-            {% for e in entries %} {% if e.is_dir %}
-            <li class="dir">
-                📁 <a href="{{ url_for('browse', subpath=e.rel_path) }}">{{ e.name }}/</a>
-            </li>
+        <!-- Tone.js -->
+<script src="https://cdn.jsdelivr.net/npm/tone/build/Tone.js"></script>
 
-            {% elif e.is_midi %}
-            <li class="midi">
-                🎹 {{ e.name }}
+        <!-- @tonejs/midi UMD build that exposes global `Midi` -->
+<script src="https://unpkg.com/@tonejs/midi"></script>
 
-                <button
-                    class="play-btn"
-                    data-midi-url="{{ url_for('midi_file', subpath=e.rel_path) }}"
-                >
-                    ▶ Play
-                </button>
-            </li>
+        <!-- Your player logic (depends on `Tone` and `Midi` already being loaded) -->
+<script src="{{ url_for('static', filename='js/player.js') }}"></script>
+        <script>
+            document.addEventListener("DOMContentLoaded", () => {
+                const toggle = document.getElementById("themeToggle");
+                const root = document.documentElement;
+                const STORAGE_KEY = "km-theme";
 
-            {% else %}
-            <li class="file">📄 {{ e.name }}</li>
-            {% endif %} {% endfor %}
-        </ul>
+                if (!toggle) return;
 
-        <div id="status" class="status">Idle</div>
+                const updateLabel = (theme) => {
+                    if (theme === "dark") {
+                        toggle.textContent = "🌙";
+                        toggle.setAttribute("aria-label", "Switch to light mode");
+                    } else {
+                        toggle.textContent = "☀️";
+                        toggle.setAttribute("aria-label", "Switch to dark mode");
+                    }
+                };
 
-        <!-- Libraries -->
-        <script src="https://cdn.jsdelivr.net/npm/tone/build/Tone.js"></script>
-        <script src="https://cdn.jsdelivr.net/npm/@tonejs/midi/dist/Midi.js"></script>
+                const setTheme = (theme, skipPersist = false) => {
+                    root.setAttribute("data-theme", theme);
+                    if (!skipPersist) {
+                        localStorage.setItem(STORAGE_KEY, theme);
+                    }
+                    updateLabel(theme);
+                    window.dispatchEvent(
+                        new CustomEvent("km-theme-change", { detail: { theme } })
+                    );
+                };
 
-        <!-- Your player logic -->
-        <script src="{{ url_for('static', filename='js/player.js') }}"></script>
+                const currentTheme = root.getAttribute("data-theme") || "dark";
+                updateLabel(currentTheme);
+                window.dispatchEvent(
+                    new CustomEvent("km-theme-change", { detail: { theme: currentTheme } })
+                );
+
+                toggle.addEventListener("click", () => {
+                    const activeTheme = root.getAttribute("data-theme") || "dark";
+                    const nextTheme = activeTheme === "dark" ? "light" : "dark";
+                    setTheme(nextTheme);
+                });
+            });
+        </script>
+
     </body>
 </html>
